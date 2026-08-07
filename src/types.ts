@@ -1,0 +1,76 @@
+export type Direction = 'income' | 'expense'
+
+export type Source = 'schwab-csv' | 'venmo-csv' | 'schwab-email' | 'venmo-email' | 'manual'
+
+export interface Transaction {
+  id?: number
+  /** ISO date, local: YYYY-MM-DD */
+  date: string
+  /** integer cents, always positive; direction carries the sign */
+  amountCents: number
+  direction: Direction
+  source: Source
+  merchant: string
+  category: string
+  /** original row/email text for reference and re-parsing */
+  rawText: string
+  /** hash of date+amount+merchant used to prevent double counting */
+  dedupeHash: string
+  needsReview?: boolean
+}
+
+export interface Rule {
+  id?: number
+  /** lowercase substring matched against merchant + raw text */
+  pattern: string
+  category: string
+  /** lower runs first; user rules run before defaults */
+  priority: number
+}
+
+export interface Settings {
+  key: string
+  value: string
+}
+
+export const CATEGORIES = [
+  'Groceries',
+  'Dining',
+  'Entertainment',
+  'Transport',
+  'Shopping',
+  'Bills & Utilities',
+  'Health',
+  'Transfers',
+  'Income',
+  'Miscellaneous',
+] as const
+
+export type Category = (typeof CATEGORIES)[number]
+
+export const CATEGORY_COLORS: Record<string, { bg: string; ink: string }> = {
+  Groceries: { bg: '#BFE8D4', ink: '#22664A' },
+  Dining: { bg: '#F9D5B8', ink: '#8A5220' },
+  Entertainment: { bg: '#CDC7F2', ink: '#48408F' },
+  Transport: { bg: '#BFDCF4', ink: '#2E5E8C' },
+  Shopping: { bg: '#F4C9DC', ink: '#8F3D63' },
+  'Bills & Utilities': { bg: '#FBE7A1', ink: '#7A5A0B' },
+  Health: { bg: '#C9EDE8', ink: '#22685F' },
+  Transfers: { bg: '#E3E5EC', ink: '#565B6B' },
+  Income: { bg: '#A9DFC3', ink: '#1D5E41' },
+  Miscellaneous: { bg: '#DCE8C9', ink: '#55663A' },
+}
+
+export interface Card {
+  id?: number
+  name: string
+  /** credit limit in integer cents */
+  limitCents: number
+  /** current balance in integer cents, entered/updated by the user */
+  balanceCents: number
+}
+
+export interface CustomCategory {
+  id?: number
+  name: string
+}
