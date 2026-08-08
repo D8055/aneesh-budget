@@ -8,7 +8,7 @@ import { categorize } from '../lib/categorize'
 import { connectGmail, disconnectGmail, syncGmail, hasBuiltInClientId } from '../lib/gmail'
 import { eraseAllData } from '../db'
 import { fmtCents, parseCents } from '../lib/money'
-import { CATEGORIES, type Transaction } from '../types'
+import { CATEGORIES, type Transaction, type Card } from '../types'
 import CategoryChip from '../components/CategoryChip'
 
 type Pending = { source: 'schwab' | 'venmo' | 'bank'; label: string; txs: Transaction[]; skipped: number }
@@ -29,7 +29,7 @@ export default function Settings() {
   const userRules = useLiveQuery(() => db.rules.orderBy('priority').toArray()) ?? []
   const cards = useLiveQuery(() => db.cards.toArray()) ?? []
   const customCats = useLiveQuery(() => db.customCategories.toArray()) ?? []
-  const [cardForm, setCardForm] = useState({ name: '', limit: '', balance: '' })
+  const [cardForm, setCardForm] = useState<{ name: string; kind: Card['kind']; limit: string; balance: string }>({ name: '', kind: 'credit', limit: '', balance: '' })
   const [newCat, setNewCat] = useState('')
   const [scanProgress, setScanProgress] = useState<{ done: number; total: number } | null>(null)
 
@@ -124,20 +124,25 @@ export default function Settings() {
   }
 
   const addCard = async () => {
-    const limit = parseCents(cardForm.limit)
-    const balance = parseCents(cardForm.balance) ?? 0
-    if (!cardForm.name.trim() || limit === null || limit === 0) {
-      flash('err', 'A card needs a name and a credit limit.')
+    const name = cardForm.name.trim()
+    if (!name) {
+      flash('err', 'A card needs a name.')
       return
     }
-    await db.cards.add({ name: cardForm.name.trim(), limitCents: limit, balanceCents: balance })
-    setCardForm({ name: '', limit: '', balance: '' })
+    const limit = parseCents(cardForm.limit) ?? 0
+    const balance = parseCents(cardForm.balance) ?? 0
+    await db.cards.add({ name, kind: cardForm.kind ?? 'credit', limitCents: limit, balanceCents: balance })
+    setCardForm({ name: '', kind: 'credit', limit: '', balance: '' })
     flash('ok', 'Card added — utilization shows on Home.')
   }
 
   const updateCardBalance = async (id: number, raw: string) => {
     const cents = parseCents(raw)
     if (cents !== null) await db.cards.update(id, { balanceCents: cents })
+  }
+
+  const updateCardKind = async (id: number, kind: Card['kind']) => {
+    await db.cards.update(id, { kind })
   }
 
   const addCategory = async () => {
@@ -255,13 +260,24 @@ export default function Settings() {
       </section>
 
       <section className="card stack">
-        <h2>Credit cards</h2>
+        <h2>Cards</h2>
         <p className="muted">Track each card’s limit and how much of it is used. Update the balance whenever you like — utilization shows on Home.</p>
         {cards.map(c => (
           <div className="row between" key={c.id}>
             <div style={{ flex: 1, minWidth: 0 }}>
-              <strong style={{ fontSize: '0.9rem' }}>{c.name}</strong>
+              <strong style={{ fontSize: '0.9rem' }}>{c.name}{c.last4 ? ` •${c.last4}` : ''}</strong>
               <p className="muted">limit {fmtCents(c.limitCents)}</p>
+            </div>
+            <div className="field" style={{ width: 110 }}>
+              <label htmlFor={`kind-${c.id}`}>Type</label>
+              <select
+                id={`kind-${c.id}`}
+                value={c.kind ?? 'credit'}
+                onChange={e => updateCardKind(c.id!, e.target.value as Card['kind'])}
+              >
+                <option value="credit">Credit card</option>
+                <option value="debit">Debit card</option>
+              </select>
             </div>
             <div className="field" style={{ width: 110 }}>
               <label htmlFor={`bal-${c.id}`}>Balance ($)</label>
@@ -279,6 +295,13 @@ export default function Settings() {
           <div className="field" style={{ flex: 2 }}>
             <label htmlFor="card-name">Card name</label>
             <input id="card-name" value={cardForm.name} onChange={e => setCardForm({ ...cardForm, name: e.target.value })} placeholder="e.g. Schwab Visa" />
+          </div>
+          <div className="field" style={{ flex: 1 }}>
+            <label htmlFor="card-kind">Type</label>
+            <select id="card-kind" value={cardForm.kind} onChange={e => setCardForm({ ...cardForm, kind: e.target.value as Card['kind'] })}>
+              <option value="credit">Credit card</option>
+              <option value="debit">Debit card</option>
+            </select>
           </div>
           <div className="field" style={{ flex: 1 }}>
             <label htmlFor="card-limit">Limit ($)</label>

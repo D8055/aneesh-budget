@@ -26,8 +26,36 @@ export function extractLabeledMerchant(text: string): string | null {
   return merchant && merchant.length >= 2 ? merchant : null
 }
 
-/** Card/account last-4 from "card ending in 1234", "account ending in ***4321", etc. */
-export function extractAccountLast4(text: string): string | undefined {
-  const m = text.match(/(?:card|account)(?:\s+number)?\s+ending(?:\s+in)?\s*[:#\s*x•.]*(\d{4})/i)
-  return m ? m[1] : undefined
+/** Longest run of filler allowed between the card/account keyword and the digits.
+ * Keeps 4-digit years and amounts elsewhere in the email from being mistaken for a last-4. */
+const MAX_KEYWORD_GAP = 20
+
+/** card/crd (card-like) or account/acct (account-like), then optional
+ * "number"/"ending"/"in" filler and masking punctuation (":", "#", "*", "x", "-", "."),
+ * then exactly four digits that are not part of a longer number. */
+const LAST4_RE =
+  /\b(cards?|crds?|accounts?|acct\.?)((?:\s*(?:number|no\.?|#)?\s*(?:ending|end)?\s*(?:in|with)?\s*[-:#*x•.\s]{0,10}))(\d{4})(?!\d)/gi
+
+type Last4Mention = { kind: 'card' | 'account'; last4: string }
+
+function findLast4Mentions(text: string): Last4Mention[] {
+  const mentions: Last4Mention[] = []
+  for (const m of text.matchAll(LAST4_RE)) {
+    if (m[2].length > MAX_KEYWORD_GAP) continue
+    mentions.push({ kind: /^(?:card|crd)/i.test(m[1]) ? 'card' : 'account', last4: m[3] })
+  }
+  return mentions
+}
+
+/** Card/account last-4 from "card ending in 1234", "account ending in ***4321",
+ * "card x1234", "acct x-1234", "Card ending: 1234", "account *1234", "acct ...1234".
+ *
+ * Payment/transfer alerts name two accounts ("from your account ending in 1234 to your
+ * card ending in 5678"); `prefer` picks the right side so a card payment is not attributed
+ * to the funding checking account. With a single mention the preference is ignored. */
+export function extractAccountLast4(text: string, prefer?: 'card' | 'account'): string | undefined {
+  const mentions = findLast4Mentions(text)
+  if (mentions.length === 0) return undefined
+  if (mentions.length === 1 || !prefer) return mentions[0].last4
+  return (mentions.find(m => m.kind === prefer) ?? mentions[0]).last4
 }

@@ -32,6 +32,8 @@ export default function Transactions() {
   const [formError, setFormError] = useState<string | null>(null)
   const [newCatSheet, setNewCatSheet] = useState('')
   const [newCatForm, setNewCatForm] = useState('')
+  const [editName, setEditName] = useState('')
+  const [editNote, setEditNote] = useState('')
   const sheetRef = useRef<HTMLDialogElement>(null)
   const addRef = useRef<HTMLDialogElement>(null)
 
@@ -59,6 +61,8 @@ export default function Transactions() {
     setEditing(t)
     setMakeRule(false)
     setNewCatSheet('')
+    setEditName(t.merchant)
+    setEditNote(t.note ?? '')
     sheetRef.current?.showModal()
   }
 
@@ -109,6 +113,24 @@ export default function Transactions() {
     }
     sheetRef.current?.close()
     setEditing(null)
+  }
+
+  const saveDetails = async () => {
+    if (!editing?.id) return
+    const merchant = editName.trim() || editing.merchant
+    const note = editNote.trim()
+    await db.transactions.update(editing.id, { merchant, note: note || undefined })
+    sheetRef.current?.close()
+    setEditing(null)
+  }
+
+  const deleteTransaction = async () => {
+    if (!editing?.id) return
+    if (window.confirm('Delete this transaction? This cannot be undone. Note: a future email re-scan may re-import it, since deleting does not clear its dedupe record.')) {
+      await db.transactions.delete(editing.id)
+      sheetRef.current?.close()
+      setEditing(null)
+    }
   }
 
   const filters = ['All', ...(reviewCount > 0 ? ['Needs review'] : []), ...allCategories]
@@ -167,6 +189,7 @@ export default function Transactions() {
                   {fmtDateShort(t.date)} · {sourceLabel(t)} · {t.category}
                   {t.needsReview && <span className="tx-badge needs-review">review</span>}
                 </p>
+                {t.note && <p className="muted" style={{ fontSize: '0.78rem', fontStyle: 'italic', margin: '2px 0 0' }}>{t.note}</p>}
               </div>
               <span className={`tx-amount ${t.direction}`}>
                 {t.direction === 'income' ? '+' : '−'}{fmtCents(t.amountCents)}
@@ -223,6 +246,18 @@ export default function Transactions() {
               <input type="checkbox" checked={makeRule} onChange={e => setMakeRule(e.target.checked)} />
               Always categorize “{editing.merchant}” this way
             </label>
+            <div className="field">
+              <label htmlFor="sheet-name">Name</label>
+              <input id="sheet-name" value={editName} onChange={e => setEditName(e.target.value)} placeholder="Transaction name" />
+            </div>
+            <div className="field">
+              <label htmlFor="sheet-note">Note</label>
+              <input id="sheet-note" value={editNote} onChange={e => setEditNote(e.target.value)} placeholder="Add a note…" />
+            </div>
+            <button className="btn" onClick={saveDetails}>Save</button>
+            <button className="btn ghost" style={{ color: 'var(--blush-deep)' }} onClick={deleteTransaction}>
+              Delete transaction
+            </button>
             <button className="btn ghost" onClick={() => sheetRef.current?.close()}>Cancel</button>
           </div>
         )}

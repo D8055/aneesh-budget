@@ -111,14 +111,27 @@ export default function Dashboard() {
 
       {cards.length > 0 && (
         <section className="card">
-          <h2>Credit cards</h2>
+          <h2>Cards</h2>
           {cards.map(c => {
+            const label = `${c.name}${c.last4 ? ` •${c.last4}` : ''}`
+            const isDebit = c.kind === 'debit'
+            if (isDebit || c.limitCents === 0) {
+              return (
+                <div key={c.id} style={{ padding: '8px 0' }}>
+                  <div className="cat-name">
+                    <span>{label}</span>
+                    <span className="num">{fmtCents(c.balanceCents)}</span>
+                  </div>
+                  {!isDebit && <p className="muted">set a limit in Settings to track utilization</p>}
+                </div>
+              )
+            }
             const u = cardUtilization(c.balanceCents, c.limitCents)
             const fillClass = u.status === 'low' ? 'on-track' : u.status === 'medium' ? 'at-risk' : 'over'
             return (
               <div key={c.id} style={{ padding: '8px 0' }}>
                 <div className="cat-name">
-                  <span>{c.name}</span>
+                  <span>{label}</span>
                   <span className="num">{u.pct}% used</span>
                 </div>
                 <div className="cat-track" style={{ height: 8, marginTop: 6 }}>

@@ -16,6 +16,8 @@ export interface Transaction {
   provider?: string
   /** last 4 digits of the card/account the alert mentioned, for separating accounts */
   accountLast4?: string
+  /** user-written note */
+  note?: string
   /** original row/email text for reference and re-parsing */
   rawText: string
   /** hash of date+amount+merchant used to prevent double counting */
@@ -70,7 +72,11 @@ export const CATEGORY_COLORS: Record<string, { bg: string; ink: string }> = {
 export interface Card {
   id?: number
   name: string
-  /** credit limit in integer cents */
+  /** credit or debit; treated as 'credit' when absent (pre-existing records) */
+  kind?: 'credit' | 'debit'
+  /** last 4 digits, set for cards auto-detected from alert emails */
+  last4?: string
+  /** credit limit in integer cents; 0 = not set yet */
   limitCents: number
   /** current balance in integer cents, entered/updated by the user */
   balanceCents: number

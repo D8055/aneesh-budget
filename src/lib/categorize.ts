@@ -20,6 +20,16 @@ export const DEFAULT_RULES: Omit<Rule, 'id'>[] = [
     { p: 'natural gas', c: 'Bills & Utilities' }, { p: 'gas & electric', c: 'Bills & Utilities' },
   ].map(({ p, c }) => ({ pattern: p, category: c, priority: 90 })),
 
+  // Card-payment confirmations — specific enough to fire before any category block,
+  // so marketing copy in the email body ("earn 3% on dining") can't outvote the fact
+  // that this transaction *is* a credit card bill payment. Generic payment words like
+  // "autopay" stay at priority 170 so utility merchants (priority 150) still win for
+  // things like "T-MOBILE AUTOPAY".
+  ...['credit card payment', 'payment to your credit card', 'to credit card', 'credit crd', 'crd pmt',
+    'card payment', 'cardmember payment', 'payment thank you', 'thank you for your payment',
+    'payment received', 'epay', 'e-payment',
+  ].map(p => ({ pattern: p, category: 'Transfers', priority: 85 })),
+
   // Groceries
   ...['trader joe', 'whole foods', 'safeway', 'kroger', 'costco', 'aldi', 'lidl', 'sprouts', 'grocery', 'market',
     'h mart', 'ralphs', 'vons', 'pavilions', 'wegmans', 'publix', 'albertsons', 'food 4 less', 'foodsco', 'fred meyer',
@@ -117,8 +127,7 @@ export const DEFAULT_RULES: Omit<Rule, 'id'>[] = [
   // Transfers — includes both sides of a credit card bill payment, so paying the
   // card never double-counts spending that was already captured at purchase time
   ...['transfer', 'zelle', 'atm', 'withdrawal', 'cash app', 'wire',
-    'credit card payment', 'credit crd', 'card payment', 'autopay', 'auto pay', 'e-payment', 'epay',
-    'online payment', 'payment thank you', 'thank you for your payment', 'payment received',
+    'autopay', 'auto pay', 'online payment',
   ].map(p => ({ pattern: p, category: 'Transfers', priority: 170 })),
 
   // Income
@@ -133,10 +142,20 @@ export function categorize(
   direction: 'income' | 'expense',
   userRules: Rule[],
 ): string {
-  const haystack = `${merchant} ${rawText}`.toLowerCase()
   const all = [...userRules, ...DEFAULT_RULES].sort((a, b) => a.priority - b.priority)
+
+  // Pass 1: match against the merchant name alone, so marketing copy or other noise
+  // in the email/transaction body can't outvote what the merchant actually is.
+  const merchantOnly = merchant.toLowerCase()
+  for (const rule of all) {
+    if (rule.pattern && merchantOnly.includes(rule.pattern.toLowerCase())) return rule.category
+  }
+
+  // Pass 2: fall back to merchant + body text if nothing matched the merchant alone.
+  const haystack = `${merchant} ${rawText}`.toLowerCase()
   for (const rule of all) {
     if (rule.pattern && haystack.includes(rule.pattern.toLowerCase())) return rule.category
   }
+
   return direction === 'income' ? 'Income' : 'Miscellaneous'
 }

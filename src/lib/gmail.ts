@@ -170,9 +170,30 @@ export async function syncGmail(
   }
 
   const added = await addTransactions(txs)
+
+  // Auto-register any cards/accounts newly seen in this batch's alert emails.
+  let newCards = 0
+  const seenPairs = new Map<string, { provider?: string; last4: string }>()
+  for (const t of txs) {
+    if (t.accountLast4) seenPairs.set(`${t.provider ?? ''}|${t.accountLast4}`, { provider: t.provider, last4: t.accountLast4 })
+  }
+  if (seenPairs.size > 0) {
+    const existingCards = await db.cards.toArray()
+    const existingLast4s = new Set(existingCards.map(c => c.last4).filter(Boolean))
+    for (const { provider, last4 } of seenPairs.values()) {
+      if (existingLast4s.has(last4)) continue
+      await db.cards.add({ name: `${provider ?? 'Card'} •${last4}`, kind: 'credit', last4, limitCents: 0, balanceCents: 0 })
+      existingLast4s.add(last4)
+      newCards++
+    }
+  }
+
   await setSetting('gmailLastSyncEpoch', String(Math.floor(Date.now() / 1000)))
   await setSetting('gmailLastSyncAt', new Date().toISOString())
-  return { ok: true, added, scanned, message: added ? `Added ${added} new transactions.` : 'Up to date.' }
+  const message = added
+    ? `Added ${added} new transactions.${newCards > 0 ? ` ${newCards} new card${newCards === 1 ? '' : 's'} detected.` : ''}`
+    : 'Up to date.'
+  return { ok: true, added, scanned, message }
 }
 
 export async function disconnectGmail(): Promise<void> {

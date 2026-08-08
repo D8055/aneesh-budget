@@ -55,4 +55,13 @@ describe('expanded merchant word bank', () => {
     expect(cat('UNITED HEALTHCARE PREM')).not.toBe('Travel')    // "united" alone must not mean airline
     expect(cat('DELTA DENTAL PPO')).not.toBe('Travel')
   })
+  it('categorizes credit card bill payments as Transfers, not spending, even when the email body contains marketing text', () => {
+    expect(categorize('WELLS FARGO CARD PAYMENT', 'Thank you for your payment. Earn 3% on dining and food purchases.', 'expense', [])).toBe('Transfers')
+    expect(categorize('CHASE EPAY', '', 'expense', [])).toBe('Transfers')
+    expect(categorize('Payment Received - Thank You', 'dining rewards summary', 'income', [])).toBe('Transfers')
+    // generic payment words must still lose to specific utility merchant names
+    expect(categorize('T-MOBILE AUTOPAY', '', 'expense', [])).toBe('Bills & Utilities')
+    // merchant-only pass still works for ordinary dining transactions
+    expect(categorize('CHIPOTLE 1178', 'random body text', 'expense', [])).toBe('Dining')
+  })
 })

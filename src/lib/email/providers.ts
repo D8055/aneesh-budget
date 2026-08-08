@@ -140,15 +140,19 @@ function parseBankText(rawText: string): { cents: number; direction: 'income' | 
  * Returns null when nothing transaction-like can be extracted (marketing, statements, etc). */
 export function parseProviderEmail(from: string, mail: EmailInput): ParsedTx | null {
   const provider = providerFor(from)
-  const accountLast4 = extractAccountLast4(`${mail.subject} ${mail.body}`)
+  const allText = `${mail.subject} ${mail.body}`
+  /** Expenses hit the card, income lands in the account — matters only when an email
+   * names both ("from your account ending in 1234 to your card ending in 5678"). */
+  const last4For = (direction: 'income' | 'expense') =>
+    extractAccountLast4(allText, direction === 'income' ? 'account' : 'card')
 
   if (provider === 'Venmo') {
     const tx = parseVenmoEmail(mail)
-    return tx ? { ...tx, provider, accountLast4 } : null
+    return tx ? { ...tx, provider, accountLast4: extractAccountLast4(allText) } : null
   }
   if (provider === 'Schwab') {
     const tx = parseSchwabEmail(mail)
-    return tx ? { ...tx, provider, accountLast4 } : null
+    return tx ? { ...tx, provider, accountLast4: extractAccountLast4(allText) } : null
   }
 
   const segments = [mail.subject.replace(/\s+/g, ' ').trim(), mail.body.replace(/\s+/g, ' ').trim()]
@@ -165,7 +169,7 @@ export function parseProviderEmail(from: string, mail: EmailInput): ParsedTx | n
         direction: p2p.direction,
         source: 'bank-email',
         provider,
-        accountLast4,
+        accountLast4: last4For(p2p.direction),
         merchant,
         rawText: segments.join(' | ').slice(0, 500),
         dedupeHash: dedupeHash(date, p2p.cents, merchant, p2p.direction),
@@ -185,7 +189,7 @@ export function parseProviderEmail(from: string, mail: EmailInput): ParsedTx | n
         direction: bank.direction,
         source: 'bank-email',
         provider,
-        accountLast4,
+        accountLast4: last4For(bank.direction),
         merchant,
         rawText: segments.join(' | ').slice(0, 500),
         dedupeHash: dedupeHash(date, bank.cents, merchant, bank.direction),
