@@ -1,7 +1,8 @@
 import { db, getSetting, setSetting, addTransactions } from '../db'
 import { categorize } from './categorize'
 import type { EmailInput } from './email/schwabEmail'
-import { parseProviderEmail, KNOWN_SENDER_DOMAINS } from './email/providers'
+import { parseProviderEmail } from './email/providers'
+import { buildGmailQuery } from './gmailQuery'
 import type { Transaction } from '../types'
 
 const GSI_SRC = 'https://accounts.google.com/gsi/client'
@@ -16,7 +17,6 @@ export async function resolveClientId(): Promise<string> {
 export function hasBuiltInClientId(): boolean {
   return BUILT_IN_CLIENT_ID.length > 0
 }
-const QUERY_SENDERS = `from:(${KNOWN_SENDER_DOMAINS.join(' OR ')})`
 
 let accessToken: string | null = null
 let tokenExpiry = 0
@@ -125,14 +125,15 @@ export interface SyncResult {
   message: string
 }
 
-/** Fetch new Schwab/Venmo alert emails since the last sync and turn them into transactions. */
-export async function syncGmail(): Promise<SyncResult> {
+/** Fetch alert emails from all known banks and payment apps and turn them into transactions.
+ * The first-ever sync (and any explicit fullHistory re-scan) walks the entire mailbox;
+ * later syncs only fetch mail newer than the last sync. */
+export async function syncGmail(options: { fullHistory?: boolean } = {}): Promise<SyncResult> {
   if (!(await ensureToken())) {
     return { ok: false, added: 0, scanned: 0, message: 'Gmail is not connected.' }
   }
   const lastSync = await getSetting('gmailLastSyncEpoch')
-  const afterClause = lastSync ? ` after:${lastSync}` : ' newer_than:90d'
-  const q = encodeURIComponent(QUERY_SENDERS + afterClause)
+  const q = encodeURIComponent(buildGmailQuery(lastSync, options.fullHistory ?? false))
 
   let scanned = 0
   const txs: Transaction[] = []

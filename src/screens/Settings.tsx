@@ -97,10 +97,11 @@ export default function Settings() {
     }
   }
 
-  const doSync = async () => {
+  const doSync = async (fullHistory = false) => {
     setBusy(true)
+    if (fullHistory) flash('info', 'Scanning your whole email history — this can take a minute…')
     try {
-      const result = await syncGmail()
+      const result = await syncGmail({ fullHistory })
       flash(result.ok ? 'ok' : 'err', `${result.message} (${result.scanned} emails scanned)`)
     } catch (e) {
       flash('err', e instanceof Error ? e.message : 'Sync failed.')
@@ -200,8 +201,9 @@ export default function Settings() {
             )}
           </>
         ) : (
-          <div className="row">
-            <button className="btn small" disabled={busy} onClick={doSync}>Sync now</button>
+          <div className="row" style={{ flexWrap: 'wrap' }}>
+            <button className="btn small" disabled={busy} onClick={() => doSync()}>Sync now</button>
+            <button className="btn secondary small" disabled={busy} onClick={() => doSync(true)}>Re-scan all history</button>
             <button className="btn ghost small" onClick={() => disconnectGmail().then(() => flash('info', 'Gmail disconnected.'))}>Sign out</button>
           </div>
         )}
@@ -303,6 +305,16 @@ export default function Settings() {
           ))}
         </section>
       )}
+
+      <section className="card stack">
+        <h2>Privacy</h2>
+        <p className="muted">
+          Everything — transactions, cards, categories, rules, and settings — lives only in this device’s
+          local storage. There is no server and no account. Gmail is contacted directly from this device
+          with read-only access, and emails are parsed right here; nothing is ever uploaded anywhere.
+          Deleting the app deletes the data.
+        </p>
+      </section>
 
       <section className="card stack">
         <h2>Reset</h2>

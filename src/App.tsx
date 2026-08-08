@@ -13,6 +13,9 @@ export default function App() {
   const [syncNote, setSyncNote] = useState<string | null>(null)
 
   useEffect(() => {
+    // Ask the browser to mark this app's on-device storage as persistent so the
+    // OS never silently evicts transactions under storage pressure.
+    navigator.storage?.persist?.().catch(() => {})
     let cancelled = false
     const run = async () => {
       try {
