@@ -90,17 +90,25 @@ export default function Dashboard() {
     txs: monthTxs.filter(t => t.direction === 'expense' && t.category === name).sort(byAmount),
     totalCents: cents,
   })
+  const spendOnCard = (last4?: string) => last4
+    ? monthTxs.filter(t => t.direction === 'expense' && t.category !== 'Transfers' && t.accountLast4 === last4)
+        .reduce((s, t) => s + t.amountCents, 0)
+    : 0
+
   const showCard = (c: Card) => {
     const cardTxs = c.last4
       ? allTxs.filter(t => t.accountLast4 === c.last4).sort((a, b) => b.date.localeCompare(a.date)).slice(0, 50)
       : []
+    const hasBalance = c.balanceCents > 0
     setBreakdown({
       title: `${c.name}${c.last4 ? ` •${c.last4}` : ''}`,
-      description: `Balance and limit are entered in Settings. ${c.last4
-        ? `Below: the latest transactions matched to •${c.last4} from alert emails.`
-        : 'No last-4 is linked to this card yet, so transactions cannot be matched to it automatically.'}`,
+      description: `${hasBalance
+        ? 'Balance and limit are entered in Settings — emails don’t carry balances.'
+        : `No balance set yet, so the total shows ${monthName} spending on this card. Enter the real balance and limit in Settings to track utilization.`} ${c.last4
+        ? `Latest transactions matched to •${c.last4}:`
+        : 'No last-4 is linked to this card, so transactions cannot be matched to it automatically.'}`,
       txs: cardTxs,
-      totalCents: c.balanceCents,
+      totalCents: hasBalance ? c.balanceCents : spendOnCard(c.last4),
     })
   }
 
@@ -163,14 +171,18 @@ export default function Dashboard() {
           {cards.map(c => {
             const label = `${c.name}${c.last4 ? ` •${c.last4}` : ''}`
             const isDebit = c.kind === 'debit'
+            const monthSpend = spendOnCard(c.last4)
+            const hasBalance = c.balanceCents > 0
             if (isDebit || c.limitCents === 0) {
               return (
                 <button key={c.id} className="metric-btn" style={{ padding: '8px 0' }} onClick={() => showCard(c)}>
                   <div className="cat-name">
                     <span>{label}</span>
-                    <span className="num">{fmtCents(c.balanceCents)}</span>
+                    <span className="num">{hasBalance ? fmtCents(c.balanceCents) : fmtCents(monthSpend)}</span>
                   </div>
-                  {!isDebit && <p className="muted">set a limit in Settings to track utilization</p>}
+                  <p className="muted">
+                    {hasBalance ? 'balance' : `spent this month${!isDebit ? ' — set its limit and balance in Settings for utilization' : ''}`}
+                  </p>
                 </button>
               )
             }
@@ -186,7 +198,7 @@ export default function Dashboard() {
                   <div className={`cat-fill runway-fill ${fillClass}`} style={{ width: `${u.barPct}%`, position: 'relative' }} />
                 </div>
                 <div className="runway-labels" style={{ marginTop: 4 }}>
-                  <span>{fmtCents(c.balanceCents)} balance</span>
+                  <span>{hasBalance ? `${fmtCents(c.balanceCents)} balance` : `${fmtCents(monthSpend)} spent this month`}</span>
                   <span>{fmtCents(c.limitCents)} limit</span>
                 </div>
               </button>
