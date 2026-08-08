@@ -1,4 +1,4 @@
-import type { Rule } from '../types'
+import type { Rule, Transaction } from '../types'
 
 /** Built-in merchant word bank, applied after user rules. Patterns are lowercase substrings.
  * Priority ordering resolves collisions: overrides (90) run before every category block, and
@@ -30,8 +30,20 @@ export const DEFAULT_RULES: Omit<Rule, 'id'>[] = [
     'payment received', 'epay', 'e-payment',
   ].map(p => ({ pattern: p, category: 'Transfers', priority: 85 })),
 
+  // Emoji — Venmo notes are often emoji-only; unambiguous, so they rank just after overrides
+  ...Object.entries({
+    Dining: ['🍕', '🍔', '🌮', '🍜', '🍣', '🥡', '🍟', '🌯', '🍗', '🍺', '🍻', '🍷', '🍸', '☕', '🧋', '🍦', '🍩', '🎂', '🥪', '🥘'],
+    Transport: ['⛽', '🚗', '🚕', '🚙', '🅿️', '🚌', '🚇'],
+    'Bills & Utilities': ['🏠', '🏡', '💡', '💧', '📶', '🔌'],
+    Entertainment: ['🎬', '🎮', '🎟️', '🎳', '🎤', '🎵', '🎭', '🎪'],
+    Groceries: ['🛒'],
+    Travel: ['✈️', '🏨', '🏝️', '🗺️'],
+    Health: ['💊', '🏥', '🏋️'],
+    Shopping: ['🛍️', '👟', '👗'],
+  }).flatMap(([category, emojis]) => emojis.map(pattern => ({ pattern, category, priority: 95 }))),
+
   // Groceries
-  ...['trader joe', 'whole foods', 'safeway', 'kroger', 'costco', 'aldi', 'lidl', 'sprouts', 'grocery', 'market',
+  ...['trader joe', 'whole foods', 'safeway', 'kroger', 'costco', 'aldi', 'lidl', 'sprouts', 'grocery', 'groceries', 'market',
     'h mart', 'ralphs', 'vons', 'pavilions', 'wegmans', 'publix', 'albertsons', 'food 4 less', 'foodsco', 'fred meyer',
     'qfc', 'king soopers', 'city market', "smith's food", 'harris teeter', 'giant eagle', 'stop & shop', 'giant food',
     'food lion', 'hannaford', 'shoprite', 'price chopper', 'winn-dixie', 'piggly wiggly', 'heb ', 'h-e-b', 'meijer',
@@ -134,6 +146,18 @@ export const DEFAULT_RULES: Omit<Rule, 'id'>[] = [
   ...['payroll', 'direct dep', 'deposit', 'salary', 'paycheck', 'interest paid', 'refund', 'cashback', 'reimburse',
   ].map(p => ({ pattern: p, category: 'Income', priority: 180 })),
 ]
+
+/** Incoming Venmo money is usually friends paying you back, not income. Unless a
+ * user-created rule (e.g. "payments from Maya → Income") explicitly matched, default
+ * it to Reimbursements and flag it for a one-tap review. */
+export function applyVenmoIncomeDefaults(tx: Transaction, userRules: Rule[]): Transaction {
+  const isVenmoIncome = tx.direction === 'income' && (tx.source === 'venmo-email' || tx.source === 'venmo-csv')
+  if (!isVenmoIncome) return tx
+  const haystack = `${tx.merchant} ${tx.rawText}`.toLowerCase()
+  const userRuleMatched = userRules.some(r => r.pattern && haystack.includes(r.pattern.toLowerCase()))
+  if (userRuleMatched) return tx
+  return { ...tx, category: 'Reimbursements', needsReview: true }
+}
 
 /** Pick a category for a transaction. User rules (priority < 90) win over defaults. */
 export function categorize(

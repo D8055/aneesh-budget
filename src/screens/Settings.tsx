@@ -4,7 +4,7 @@ import { db, getSetting, setSetting, addTransactions } from '../db'
 import { parseSchwabCsv } from '../lib/csv/schwab'
 import { parseVenmoCsv } from '../lib/csv/venmo'
 import { parseGenericCsv } from '../lib/csv/generic'
-import { categorize } from '../lib/categorize'
+import { categorize, applyVenmoIncomeDefaults } from '../lib/categorize'
 import { connectGmail, disconnectGmail, syncGmail, hasBuiltInClientId } from '../lib/gmail'
 import { eraseAllData } from '../db'
 import { fmtCents, parseCents } from '../lib/money'
@@ -67,7 +67,8 @@ export default function Settings() {
       return
     }
     const rules = await db.rules.toArray()
-    const withCats = txs.map(t => ({ ...t, category: categorize(t.merchant, t.rawText, t.direction, rules) }))
+    const withCats = txs.map(t =>
+      applyVenmoIncomeDefaults({ ...t, category: categorize(t.merchant, t.rawText, t.direction, rules) }, rules))
     setPending({ source, label, txs: withCats, skipped })
   }
 

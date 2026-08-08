@@ -7,6 +7,7 @@ import { cardUtilization } from '../lib/cards'
 import { fmtCents } from '../lib/money'
 import { monthKey, fmtDateShort } from '../lib/dates'
 import { projectMonth, type Projection } from '../lib/projection'
+import { monthTotals } from '../lib/totals'
 import CategoryChip from '../components/CategoryChip'
 import BreakdownSheet, { type Breakdown } from '../components/BreakdownSheet'
 import type { Card, Transaction } from '../types'
@@ -29,13 +30,12 @@ export default function Dashboard() {
       db.cards.toArray(),
     ])
 
-    const spent = monthTxs.filter(t => t.direction === 'expense' && t.category !== 'Transfers').reduce((s, t) => s + t.amountCents, 0)
-    const income = monthTxs.filter(t => t.direction === 'income' && t.category !== 'Transfers').reduce((s, t) => s + t.amountCents, 0)
+    const { spentCents: spent, incomeCents: income } = monthTotals(monthTxs)
 
     // fallback budget: average income of the previous 3 months with data
     const incomeByMonth = new Map<string, number>()
     for (const t of allTxs) {
-      if (t.direction !== 'income' || t.category === 'Transfers') continue
+      if (t.direction !== 'income' || t.category === 'Transfers' || t.category === 'Reimbursements') continue
       const k = monthKey(t.date)
       if (k >= thisMonth) continue
       incomeByMonth.set(k, (incomeByMonth.get(k) ?? 0) + t.amountCents)
@@ -66,12 +66,15 @@ export default function Dashboard() {
   const monthName = now.toLocaleDateString('en-US', { month: 'long' })
   const byAmount = (a: Transaction, b: Transaction) => b.amountCents - a.amountCents
   const monthExpenses = monthTxs.filter(t => t.direction === 'expense' && t.category !== 'Transfers').sort(byAmount)
-  const monthIncome = monthTxs.filter(t => t.direction === 'income' && t.category !== 'Transfers').sort(byAmount)
+  const monthIncome = monthTxs.filter(t => t.direction === 'income' && t.category !== 'Transfers' && t.category !== 'Reimbursements').sort(byAmount)
+  const monthReimb = monthTxs.filter(t => t.direction === 'income' && t.category === 'Reimbursements').sort(byAmount)
+  const reimbTotal = monthReimb.reduce((s, t) => s + t.amountCents, 0)
 
   const showSpent = () => setBreakdown({
     title: `Spent in ${monthName}`,
-    description: 'Every expense counted this month. Transfers and credit card bill payments are excluded so nothing is double-counted.',
-    txs: monthExpenses,
+    description: `Every expense counted this month. Transfers and credit card bill payments are excluded so nothing is double-counted.${reimbTotal > 0 ? ` Reimbursements (+${fmtCents(reimbTotal)}, shown below) are subtracted — friends paying you back reduce what you really spent.` : ''}`,
+    txs: [...monthExpenses, ...monthReimb],
+    totalCents: p.spentCents,
   })
   const showIncome = () => setBreakdown({
     title: `Income in ${monthName}`,

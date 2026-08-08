@@ -50,6 +50,7 @@ export const CATEGORIES = [
   'Travel',
   'Transfers',
   'Income',
+  'Reimbursements',
   'Miscellaneous',
 ] as const
 
@@ -66,6 +67,7 @@ export const CATEGORY_COLORS: Record<string, { bg: string; ink: string }> = {
   Travel: { bg: '#C7E3F2', ink: '#2C5E7E' },
   Transfers: { bg: '#E3E5EC', ink: '#565B6B' },
   Income: { bg: '#A9DFC3', ink: '#1D5E41' },
+  Reimbursements: { bg: '#C9F2DF', ink: '#1F6B4A' },
   Miscellaneous: { bg: '#DCE8C9', ink: '#55663A' },
 }
 

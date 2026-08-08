@@ -209,6 +209,16 @@ export default function Transactions() {
                 <p className="muted">{fmtDateShort(editing.date)} · {fmtCents(editing.amountCents)}</p>
               </div>
             </div>
+            {editing.needsReview && editing.direction === 'income' && (editing.source === 'venmo-email' || editing.source === 'venmo-csv') && (
+              <div className="row">
+                <button className="btn small" style={{ flex: 1 }} onClick={() => saveCategory('Reimbursements')}>
+                  Paying me back
+                </button>
+                <button className="btn secondary small" style={{ flex: 1 }} onClick={() => saveCategory('Income')}>
+                  Real income
+                </button>
+              </div>
+            )}
             <div className="chips" style={{ flexWrap: 'wrap', overflow: 'visible' }}>
               {allCategories.map(c => (
                 <button key={c} className={`chip ${editing.category === c ? 'active' : ''}`} onClick={() => saveCategory(c)}>

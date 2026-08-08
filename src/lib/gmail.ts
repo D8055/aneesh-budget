@@ -1,5 +1,5 @@
 import { db, getSetting, setSetting, addTransactions } from '../db'
-import { categorize } from './categorize'
+import { categorize, applyVenmoIncomeDefaults } from './categorize'
 import type { EmailInput } from './email/schwabEmail'
 import { parseProviderEmail } from './email/providers'
 import { buildGmailQuery } from './gmailQuery'
@@ -218,7 +218,7 @@ export async function syncGmail(
       const parsed = parseProviderEmail(from, email)
       if (parsed) {
         const category = categorize(parsed.merchant, parsed.rawText, parsed.direction, userRules)
-        txs.push({ ...parsed, category })
+        txs.push(applyVenmoIncomeDefaults({ ...parsed, category }, userRules))
       }
     } catch {
       // one unreadable/unparseable email must never abort the whole scan

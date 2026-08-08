@@ -3,6 +3,21 @@ import { parseCents } from '../money'
 import { dedupeHash } from '../dedupe'
 import type { EmailInput } from './schwabEmail'
 
+/** Boilerplate lines that are never the payment note. */
+const NOTE_NOISE = /\$|https?:\/\/|venmo|payment id|see transaction|unsubscribe|paid you|you paid|charge request|balance|privacy|help center|support|©|instant transfer/i
+
+/** The payment note ("dinner 🍜") from a Venmo email body: the first short line
+ * that isn't amount/link/boilerplate. Undefined when no real note exists. */
+export function extractVenmoNote(body: string): string | undefined {
+  for (const rawLine of body.split(/\n+/)) {
+    const line = rawLine.trim()
+    if (!line || line.length > 80) continue
+    if (NOTE_NOISE.test(line)) continue
+    return line
+  }
+  return undefined
+}
+
 /** Parse a Venmo notification email. Subjects look like:
  *  "You paid Priya Patel $18.50"           -> expense
  *  "Aneesh Rao paid you $25.00"            -> income  (subject may omit amount; body has it)
@@ -48,6 +63,7 @@ export function parseVenmoEmail(email: EmailInput): Omit<Transaction, 'category'
     amountCents: cents,
     direction,
     source: 'venmo-email',
+    note: extractVenmoNote(email.body),
     merchant,
     rawText: text.slice(0, 500),
     dedupeHash: dedupeHash(date, cents, merchant, direction),

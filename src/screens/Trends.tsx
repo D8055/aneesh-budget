@@ -9,6 +9,7 @@ import { colorForCategory } from '../lib/categoryColors'
 import { fmtCompact, fmtCents } from '../lib/money'
 import { monthKey, monthLabel, monthLabelShort } from '../lib/dates'
 import BreakdownSheet, { type Breakdown } from '../components/BreakdownSheet'
+import { monthTotals } from '../lib/totals'
 
 const MONTHS_SHOWN = 12
 
@@ -21,8 +22,7 @@ export default function Trends() {
     let txs = (await db.transactions.where('date').between(`${key}-00`, `${key}-99`).toArray())
       .filter(t => t.category !== 'Transfers')
     if (category) txs = txs.filter(t => t.direction === 'expense' && t.category === category)
-    const spent = txs.filter(t => t.direction === 'expense').reduce((s, t) => s + t.amountCents, 0)
-    const income = txs.filter(t => t.direction === 'income').reduce((s, t) => s + t.amountCents, 0)
+    const { spentCents: spent, incomeCents: income } = monthTotals(txs)
     txs.sort((a, b) => b.amountCents - a.amountCents)
     setBreakdown({
       title: category ? `${category} — ${monthLabel(key)}` : monthLabel(key),
@@ -38,26 +38,25 @@ export default function Trends() {
 
   const data = useLiveQuery(async () => {
     const all = await db.transactions.toArray()
-    const months = new Map<string, { spent: number; income: number; byCat: Map<string, number> }>()
+    const months = new Map<string, { txs: typeof all; byCat: Map<string, number> }>()
     for (const t of all) {
       const k = monthKey(t.date)
-      if (!months.has(k)) months.set(k, { spent: 0, income: 0, byCat: new Map() })
+      if (!months.has(k)) months.set(k, { txs: [], byCat: new Map() })
       const m = months.get(k)!
-      if (t.category === 'Transfers') continue
-      if (t.direction === 'income') m.income += t.amountCents
-      else {
-        m.spent += t.amountCents
+      m.txs.push(t)
+      if (t.category !== 'Transfers' && t.direction === 'expense') {
         m.byCat.set(t.category, (m.byCat.get(t.category) ?? 0) + t.amountCents)
       }
     }
     const keys = [...months.keys()].sort().slice(-MONTHS_SHOWN)
     return keys.map(k => {
       const m = months.get(k)!
+      const totals = monthTotals(m.txs)
       return {
         month: monthLabelShort(k),
         key: k,
-        Spent: m.spent / 100,
-        Income: m.income / 100,
+        Spent: totals.spentCents / 100,
+        Income: totals.incomeCents / 100,
         ...Object.fromEntries([...m.byCat.entries()].map(([c, v]) => [c, v / 100])),
       }
     })
@@ -115,7 +114,7 @@ export default function Trends() {
       <section className="card">
         <h2>Spending over time</h2>
         <div className="chips" style={{ marginBottom: 10 }}>
-          {['All spending', ...CATEGORIES.filter(c => c !== 'Income' && c !== 'Transfers'), ...customNames].map(c => (
+          {['All spending', ...CATEGORIES.filter(c => c !== 'Income' && c !== 'Transfers' && c !== 'Reimbursements'), ...customNames].map(c => (
             <button key={c} className={`chip ${focusCategory === c ? 'active' : ''}`} onClick={() => setFocusCategory(c)}>
               {c}
             </button>
