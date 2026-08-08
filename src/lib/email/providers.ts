@@ -3,6 +3,7 @@ import { parseCents } from '../money'
 import { dedupeHash } from '../dedupe'
 import { parseSchwabEmail, type EmailInput } from './schwabEmail'
 import { parseVenmoEmail } from './venmoEmail'
+import { stripThresholds, extractLabeledAmount, extractLabeledMerchant, extractAccountLast4 } from './extract'
 
 export type ParsedTx = Omit<Transaction, 'category'>
 
@@ -106,38 +107,48 @@ function parseP2P(text: string, provider: string): { cents: number; direction: '
   return null
 }
 
-/** Generic bank-alert phrasing: card purchases, charges, deposits. */
-function parseBankText(text: string): { cents: number; direction: 'income' | 'expense'; merchant: string | null } | null {
-  const amountMatch = text.match(/\$\s?([\d,]+\.?\d{0,2})/)
-  if (!amountMatch) return null
-  const cents = parseCents(amountMatch[0])
-  if (!cents) return null
+/** Generic bank-alert phrasing: card purchases, charges, deposits.
+ * Threshold phrases are stripped first so "purchases over $1.00" never becomes the amount;
+ * labeled fields (Amount:, Where:, Merchant:) win over positional guessing. */
+function parseBankText(rawText: string): { cents: number; direction: 'income' | 'expense'; merchant: string | null } | null {
+  const text = stripThresholds(rawText)
+  const labeledCents = extractLabeledAmount(text)
 
+  // A labeled Amount: field is itself a strong transaction signal (some alerts are pure field tables)
   const signal = /purchase|transaction|charge|debit|withdrawal|deposit|credited|posted|payment/i
-  if (!signal.test(text)) return null
+  if (!signal.test(rawText) && labeledCents === null) return null
+
+  const cents = labeledCents ?? (() => {
+    const amountMatch = text.match(/\$\s?([\d,]+\.?\d{0,2})/)
+    return amountMatch ? parseCents(amountMatch[0]) : null
+  })()
+  if (!cents) return null
 
   const isIncome = /\b(deposit|credited|payment received|refund)\b/i.test(text) && !/\b(purchase|card|charge)\b/i.test(text)
 
   const merchantMatch = isIncome
     ? text.match(/\bfrom\s+([^.,\n$]{2,60}?)(?:\s+has\s|\s+was\s|\s+on\s|[.,\n]|$)/i)
-    : text.match(/(?:transaction with|purchase (?:of \$[\d,.]+\s)?(?:was made )?at|charged? at|\bat)\s+([A-Z0-9][^.,\n$]{1,60}?)(?:\s+on\s|\s+exceeded\s|\s+was\s|\s+with\s|[.,\n]|$)/) ??
+    : text.match(/(?:transaction with|purchase (?:of \$[\d,.]+\s)?(?:was made )?at|charged? at|\bat)\s+([A-Z0-9][^.,\n$]{1,60}?)(?:\s+on\s|\s+exceeded\s|\s+was\s|\s+with\s|\s+which\s|[.,\n]|$)/) ??
       text.match(/transaction with\s+(?!your\b)([^.,\n$]{2,60}?)(?:\s+on\s|[.,\n]|$)/i)
 
-  return { cents, direction: isIncome ? 'income' : 'expense', merchant: merchantMatch ? merchantMatch[1].trim() : null }
+  const merchant = extractLabeledMerchant(text) ?? (merchantMatch ? merchantMatch[1].trim() : null)
+
+  return { cents, direction: isIncome ? 'income' : 'expense', merchant }
 }
 
 /** Route an email from a known financial sender to the right parser.
  * Returns null when nothing transaction-like can be extracted (marketing, statements, etc). */
 export function parseProviderEmail(from: string, mail: EmailInput): ParsedTx | null {
   const provider = providerFor(from)
+  const accountLast4 = extractAccountLast4(`${mail.subject} ${mail.body}`)
 
   if (provider === 'Venmo') {
     const tx = parseVenmoEmail(mail)
-    return tx ? { ...tx, provider } : null
+    return tx ? { ...tx, provider, accountLast4 } : null
   }
   if (provider === 'Schwab') {
     const tx = parseSchwabEmail(mail)
-    return tx ? { ...tx, provider } : null
+    return tx ? { ...tx, provider, accountLast4 } : null
   }
 
   const segments = [mail.subject.replace(/\s+/g, ' ').trim(), mail.body.replace(/\s+/g, ' ').trim()]
@@ -154,6 +165,7 @@ export function parseProviderEmail(from: string, mail: EmailInput): ParsedTx | n
         direction: p2p.direction,
         source: 'bank-email',
         provider,
+        accountLast4,
         merchant,
         rawText: segments.join(' | ').slice(0, 500),
         dedupeHash: dedupeHash(date, p2p.cents, merchant, p2p.direction),
@@ -173,6 +185,7 @@ export function parseProviderEmail(from: string, mail: EmailInput): ParsedTx | n
         direction: bank.direction,
         source: 'bank-email',
         provider,
+        accountLast4,
         merchant,
         rawText: segments.join(' | ').slice(0, 500),
         dedupeHash: dedupeHash(date, bank.cents, merchant, bank.direction),

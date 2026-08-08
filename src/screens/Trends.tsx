@@ -22,8 +22,9 @@ export default function Trends() {
       const k = monthKey(t.date)
       if (!months.has(k)) months.set(k, { spent: 0, income: 0, byCat: new Map() })
       const m = months.get(k)!
+      if (t.category === 'Transfers') continue
       if (t.direction === 'income') m.income += t.amountCents
-      else if (t.category !== 'Transfers') {
+      else {
         m.spent += t.amountCents
         m.byCat.set(t.category, (m.byCat.get(t.category) ?? 0) + t.amountCents)
       }

@@ -16,8 +16,12 @@ export const DEFAULT_RULES: Omit<Rule, 'id'>[] = [
   ...['at&t', 'verizon', 't-mobile', 'comcast', 'xfinity', 'spectrum', 'pg&e', 'edison', 'water', 'electric', 'internet', 'insurance', 'rent', 'utility', 'utilities', 'phone bill'].map(p => ({ pattern: p, category: 'Bills & Utilities', priority: 150 })),
   // Health
   ...['cvs', 'walgreens', 'pharmacy', 'doctor', 'dental', 'medical', 'gym', 'fitness', '24 hour', 'planet fitness', 'urgent care', 'clinic', 'kaiser'].map(p => ({ pattern: p, category: 'Health', priority: 160 })),
-  // Transfers
-  ...['transfer', 'zelle', 'atm', 'withdrawal', 'cash app', 'wire'].map(p => ({ pattern: p, category: 'Transfers', priority: 170 })),
+  // Transfers — includes both sides of a credit card bill payment, so paying the
+  // card never double-counts spending that was already captured at purchase time
+  ...['transfer', 'zelle', 'atm', 'withdrawal', 'cash app', 'wire',
+    'credit card payment', 'credit crd', 'card payment', 'autopay', 'auto pay', 'e-payment', 'epay',
+    'online payment', 'payment thank you', 'thank you for your payment', 'payment received',
+  ].map(p => ({ pattern: p, category: 'Transfers', priority: 170 })),
   // Income
   ...['payroll', 'direct dep', 'deposit', 'salary', 'paycheck', 'interest paid', 'refund', 'cashback', 'reimburse'].map(p => ({ pattern: p, category: 'Income', priority: 180 })),
 ]

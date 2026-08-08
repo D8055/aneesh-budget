@@ -27,12 +27,12 @@ export default function Dashboard() {
     ])
 
     const spent = monthTxs.filter(t => t.direction === 'expense' && t.category !== 'Transfers').reduce((s, t) => s + t.amountCents, 0)
-    const income = monthTxs.filter(t => t.direction === 'income').reduce((s, t) => s + t.amountCents, 0)
+    const income = monthTxs.filter(t => t.direction === 'income' && t.category !== 'Transfers').reduce((s, t) => s + t.amountCents, 0)
 
     // fallback budget: average income of the previous 3 months with data
     const incomeByMonth = new Map<string, number>()
     for (const t of allTxs) {
-      if (t.direction !== 'income') continue
+      if (t.direction !== 'income' || t.category === 'Transfers') continue
       const k = monthKey(t.date)
       if (k >= thisMonth) continue
       incomeByMonth.set(k, (incomeByMonth.get(k) ?? 0) + t.amountCents)

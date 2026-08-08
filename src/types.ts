@@ -14,6 +14,8 @@ export interface Transaction {
   category: string
   /** which institution this came from, e.g. "Chase", "Zelle" (shown in the transaction list) */
   provider?: string
+  /** last 4 digits of the card/account the alert mentioned, for separating accounts */
+  accountLast4?: string
   /** original row/email text for reference and re-parsing */
   rawText: string
   /** hash of date+amount+merchant used to prevent double counting */

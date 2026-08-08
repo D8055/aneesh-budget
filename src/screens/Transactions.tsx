@@ -17,13 +17,15 @@ const SOURCE_LABEL: Record<Transaction['source'], string> = {
   manual: 'Manual',
 }
 
-const sourceLabel = (t: Transaction) => t.provider ?? SOURCE_LABEL[t.source]
+const sourceLabel = (t: Transaction) =>
+  (t.provider ?? SOURCE_LABEL[t.source]) + (t.accountLast4 ? ` •${t.accountLast4}` : '')
 
 const EMPTY_FORM = { date: '', merchant: '', amount: '', direction: 'expense' as 'expense' | 'income', category: 'Miscellaneous' }
 
 export default function Transactions() {
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState<string>('All')
+  const [accountFilter, setAccountFilter] = useState<string>('All')
   const [editing, setEditing] = useState<Transaction | null>(null)
   const [makeRule, setMakeRule] = useState(false)
   const [form, setForm] = useState(EMPTY_FORM)
@@ -40,10 +42,16 @@ export default function Transactions() {
     let all = await db.transactions.orderBy('date').reverse().toArray()
     if (filter === 'Needs review') all = all.filter(t => t.needsReview)
     else if (filter !== 'All') all = all.filter(t => t.category === filter)
+    if (accountFilter !== 'All') all = all.filter(t => t.accountLast4 === accountFilter)
     const q = query.trim().toLowerCase()
     if (q) all = all.filter(t => t.merchant.toLowerCase().includes(q) || t.rawText.toLowerCase().includes(q))
     return all.slice(0, 300)
-  }, [query, filter])
+  }, [query, filter, accountFilter])
+
+  const accounts = useLiveQuery(async () => {
+    const all = await db.transactions.toArray()
+    return [...new Set(all.map(t => t.accountLast4).filter((a): a is string => !!a))].sort()
+  }) ?? []
 
   const reviewCount = useLiveQuery(() => db.transactions.filter(t => !!t.needsReview).count()) ?? 0
 
@@ -131,6 +139,16 @@ export default function Transactions() {
           </button>
         ))}
       </div>
+
+      {accounts.length > 1 && (
+        <div className="chips">
+          {['All', ...accounts].map(a => (
+            <button key={a} className={`chip ${accountFilter === a ? 'active' : ''}`} onClick={() => setAccountFilter(a)}>
+              {a === 'All' ? 'All accounts' : `•${a}`}
+            </button>
+          ))}
+        </div>
+      )}
 
       <section className="card">
         {!txs || txs.length === 0 ? (
