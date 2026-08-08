@@ -93,9 +93,25 @@ describe('provider email parsing', () => {
   })
 
   it('exports a sender-domain list that covers the majors', () => {
-    for (const d of ['chase.com', 'bankofamerica.com', 'wellsfargo.com', 'capitalone.com', 'zellepay.com', 'cash.app', 'paypal.com', 'venmo.com', 'schwab.com']) {
+    for (const d of [
+      'chase.com', 'bankofamerica.com', 'wellsfargo.com', 'capitalone.com', 'citi.com', 'discover.com',
+      'americanexpress.com', 'usbank.com', 'pnc.com', 'ally.com', 'sofi.com',
+      'truist.com', 'td.com', '53.com', 'regions.com', 'citizensbank.com', 'key.com', 'huntington.com',
+      'navyfederal.org', 'usaa.com', 'chime.com', 'synchronybank.com', 'barclaycardus.com', 'marcus.com',
+      'zellepay.com', 'cash.app', 'paypal.com', 'venmo.com', 'schwab.com',
+    ]) {
       expect(KNOWN_SENDER_DOMAINS.some(k => k.includes(d))).toBe(true)
     }
+  })
+
+  it('labels the newly added institutions correctly', () => {
+    const tx = parseProviderEmail('Truist <alerts@truist.com>',
+      email('Card alert', 'A purchase of $19.99 was made at WALGREENS on 08/06/2026 with your card.'))!
+    expect(tx.provider).toBe('Truist')
+    const usaa = parseProviderEmail('USAA <usaa.customer.service@mailcenter.usaa.com>',
+      email('Deposit posted', 'A deposit of $500.00 from ACME CORP has posted to your account.'))!
+    expect(usaa.provider).toBe('USAA')
+    expect(usaa.direction).toBe('income')
   })
 })
 
