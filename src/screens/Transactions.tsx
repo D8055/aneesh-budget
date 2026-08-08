@@ -12,8 +12,12 @@ const SOURCE_LABEL: Record<Transaction['source'], string> = {
   'schwab-email': 'Schwab',
   'venmo-csv': 'Venmo',
   'venmo-email': 'Venmo',
+  'bank-csv': 'Bank',
+  'bank-email': 'Bank',
   manual: 'Manual',
 }
+
+const sourceLabel = (t: Transaction) => t.provider ?? SOURCE_LABEL[t.source]
 
 const EMPTY_FORM = { date: '', merchant: '', amount: '', direction: 'expense' as 'expense' | 'income', category: 'Miscellaneous' }
 
@@ -142,7 +146,7 @@ export default function Transactions() {
               <div className="tx-main">
                 <p className="tx-merchant">{t.merchant}</p>
                 <p className="tx-meta">
-                  {fmtDateShort(t.date)} · {SOURCE_LABEL[t.source]} · {t.category}
+                  {fmtDateShort(t.date)} · {sourceLabel(t)} · {t.category}
                   {t.needsReview && <span className="tx-badge needs-review">review</span>}
                 </p>
               </div>

@@ -1,6 +1,6 @@
 export type Direction = 'income' | 'expense'
 
-export type Source = 'schwab-csv' | 'venmo-csv' | 'schwab-email' | 'venmo-email' | 'manual'
+export type Source = 'schwab-csv' | 'venmo-csv' | 'schwab-email' | 'venmo-email' | 'bank-csv' | 'bank-email' | 'manual'
 
 export interface Transaction {
   id?: number
@@ -12,6 +12,8 @@ export interface Transaction {
   source: Source
   merchant: string
   category: string
+  /** which institution this came from, e.g. "Chase", "Zelle" (shown in the transaction list) */
+  provider?: string
   /** original row/email text for reference and re-parsing */
   rawText: string
   /** hash of date+amount+merchant used to prevent double counting */

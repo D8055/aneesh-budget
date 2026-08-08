@@ -1,6 +1,6 @@
 # Aneesh's Budget
 
-A personal budgeting PWA that unifies income and spending from **Charles Schwab** (card/checking) and **Venmo**, categorizes every transaction with rules (no AI), and shows whether the month is on track — all stored on-device (IndexedDB), no server.
+A personal budgeting PWA that unifies income and spending from **banks and payment apps** — Schwab, Chase, Bank of America, Wells Fargo, Citi, Capital One, Discover, Amex, and more via alert emails and CSV exports, plus **Venmo, Zelle, Cash App, and PayPal** — categorizes every transaction with rules (no AI), and shows whether the month is on track. All data stored on-device (IndexedDB), no server.
 
 ## Everyday use
 
@@ -12,8 +12,9 @@ A personal budgeting PWA that unifies income and spending from **Charles Schwab*
 ## Getting data in
 
 ### 1. Seed history with CSVs
-- **Schwab**: log in → Accounts → History → Export (CSV) → import via *Settings → Import Schwab CSV*.
-- **Venmo**: venmo.com → Statement → Download CSV → *Settings → Import Venmo CSV*.
+- **Schwab**: log in → Accounts → History → Export (CSV) → import via *Settings → Schwab CSV*.
+- **Venmo**: venmo.com → Statement → Download CSV → *Settings → Venmo CSV*.
+- **Any other bank or card** (Chase, BofA, Wells Fargo, Citi, …): download the account's CSV export → *Settings → Other bank CSV*. Columns for date, description, and amount (or debit/credit) are detected automatically.
 
 Duplicates are skipped automatically (date + amount + merchant hash), so re-importing overlapping ranges is safe.
 

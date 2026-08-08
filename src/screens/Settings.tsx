@@ -3,6 +3,7 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import { db, getSetting, setSetting, addTransactions } from '../db'
 import { parseSchwabCsv } from '../lib/csv/schwab'
 import { parseVenmoCsv } from '../lib/csv/venmo'
+import { parseGenericCsv } from '../lib/csv/generic'
 import { categorize } from '../lib/categorize'
 import { connectGmail, disconnectGmail, syncGmail, hasBuiltInClientId } from '../lib/gmail'
 import { eraseAllData } from '../db'
@@ -10,7 +11,7 @@ import { fmtCents, parseCents } from '../lib/money'
 import { CATEGORIES, type Transaction } from '../types'
 import CategoryChip from '../components/CategoryChip'
 
-type Pending = { source: 'schwab' | 'venmo'; txs: Transaction[]; skipped: number }
+type Pending = { source: 'schwab' | 'venmo' | 'bank'; label: string; txs: Transaction[]; skipped: number }
 
 export default function Settings() {
   const [clientId, setClientId] = useState('')
@@ -18,7 +19,8 @@ export default function Settings() {
   const [note, setNote] = useState<{ kind: 'ok' | 'err' | 'info'; text: string } | null>(null)
   const [pending, setPending] = useState<Pending | null>(null)
   const [busy, setBusy] = useState(false)
-  const fileRef = useRef<'schwab' | 'venmo'>('schwab')
+  const fileRef = useRef<'schwab' | 'venmo' | 'bank'>('schwab')
+  const bankNameRef = useRef('')
   const inputRef = useRef<HTMLInputElement>(null)
 
   const connected = useLiveQuery(() => db.settings.get('gmailConnected'))?.value === 'true'
@@ -40,7 +42,12 @@ export default function Settings() {
     setTimeout(() => setNote(null), 5000)
   }
 
-  const pickFile = (source: 'schwab' | 'venmo') => {
+  const pickFile = (source: 'schwab' | 'venmo' | 'bank') => {
+    if (source === 'bank') {
+      const name = window.prompt('Which bank or card is this CSV from? (e.g. Chase, Wells Fargo)')
+      if (name === null) return
+      bankNameRef.current = name.trim() || 'Bank'
+    }
     fileRef.current = source
     inputRef.current?.click()
   }
@@ -49,14 +56,18 @@ export default function Settings() {
     if (!f) return
     const text = await f.text()
     const source = fileRef.current
-    const { txs, skipped } = source === 'schwab' ? parseSchwabCsv(text) : parseVenmoCsv(text)
+    const label = source === 'schwab' ? 'Schwab' : source === 'venmo' ? 'Venmo' : bankNameRef.current
+    const { txs, skipped } =
+      source === 'schwab' ? parseSchwabCsv(text)
+      : source === 'venmo' ? parseVenmoCsv(text)
+      : parseGenericCsv(text, label)
     if (txs.length === 0) {
-      flash('err', `Nothing recognizable in that file. Expecting a ${source === 'schwab' ? 'Schwab' : 'Venmo'} statement CSV.`)
+      flash('err', `Nothing recognizable in that file. Expecting a ${label} statement CSV with date, description, and amount columns.`)
       return
     }
     const rules = await db.rules.toArray()
     const withCats = txs.map(t => ({ ...t, category: categorize(t.merchant, t.rawText, t.direction, rules) }))
-    setPending({ source, txs: withCats, skipped })
+    setPending({ source, label, txs: withCats, skipped })
   }
 
   const commitImport = async () => {
@@ -158,10 +169,11 @@ export default function Settings() {
 
       <section className="card stack">
         <h2>Seed with statements</h2>
-        <p className="muted">Export a CSV from Schwab (transaction history) or Venmo (statement page) and import it here. Duplicates are skipped automatically.</p>
-        <div className="row">
-          <button className="btn secondary small" onClick={() => pickFile('schwab')}>Import Schwab CSV</button>
-          <button className="btn secondary small" onClick={() => pickFile('venmo')}>Import Venmo CSV</button>
+        <p className="muted">Export a CSV from your bank, card, or payment app and import it here. Works with Schwab, Venmo, and any bank export that has date, description, and amount columns (Chase, Bank of America, Wells Fargo, etc.). Duplicates are skipped automatically.</p>
+        <div className="row" style={{ flexWrap: 'wrap' }}>
+          <button className="btn secondary small" onClick={() => pickFile('schwab')}>Schwab CSV</button>
+          <button className="btn secondary small" onClick={() => pickFile('venmo')}>Venmo CSV</button>
+          <button className="btn secondary small" onClick={() => pickFile('bank')}>Other bank CSV</button>
         </div>
         <input ref={inputRef} type="file" accept=".csv,text/csv" hidden onChange={e => { onFile(e.target.files?.[0]); e.target.value = '' }} />
       </section>
@@ -312,7 +324,7 @@ export default function Settings() {
       {pending && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(45,49,66,0.35)', zIndex: 20, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
           <div className="card stack" style={{ width: '100%', maxWidth: 480, borderRadius: '20px 20px 0 0', maxHeight: '75dvh', overflow: 'auto' }}>
-            <h2>Preview — {pending.source === 'schwab' ? 'Schwab' : 'Venmo'} import</h2>
+            <h2>Preview — {pending.label} import</h2>
             <p className="muted">
               {pending.txs.length} transactions found{pending.skipped > 0 ? `, ${pending.skipped} rows skipped` : ''}. First few:
             </p>

@@ -1,7 +1,7 @@
 import { db, getSetting, setSetting, addTransactions } from '../db'
 import { categorize } from './categorize'
-import { parseSchwabEmail, type EmailInput } from './email/schwabEmail'
-import { parseVenmoEmail } from './email/venmoEmail'
+import type { EmailInput } from './email/schwabEmail'
+import { parseProviderEmail, KNOWN_SENDER_DOMAINS } from './email/providers'
 import type { Transaction } from '../types'
 
 const GSI_SRC = 'https://accounts.google.com/gsi/client'
@@ -16,7 +16,7 @@ export async function resolveClientId(): Promise<string> {
 export function hasBuiltInClientId(): boolean {
   return BUILT_IN_CLIENT_ID.length > 0
 }
-const QUERY_SENDERS = 'from:(venmo@venmo.com OR venmo.com OR alerts.schwab.com OR schwab.com)'
+const QUERY_SENDERS = `from:(${KNOWN_SENDER_DOMAINS.join(' OR ')})`
 
 let accessToken: string | null = null
 let tokenExpiry = 0
@@ -152,7 +152,7 @@ export async function syncGmail(): Promise<SyncResult> {
       const body = extractBody(msg.payload)
       const email: EmailInput = { subject, body, receivedDate }
 
-      const parsed = /venmo/i.test(from) ? parseVenmoEmail(email) : parseSchwabEmail(email)
+      const parsed = parseProviderEmail(from, email)
       if (parsed) {
         const category = categorize(parsed.merchant, parsed.rawText, parsed.direction, userRules)
         txs.push({ ...parsed, category })
