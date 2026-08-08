@@ -5,7 +5,6 @@ import { parseProviderEmail } from './email/providers'
 import { buildGmailQuery } from './gmailQuery'
 import type { Transaction } from '../types'
 
-const GSI_SRC = 'https://accounts.google.com/gsi/client'
 const SCOPE = 'https://www.googleapis.com/auth/gmail.readonly'
 /** Baked in at build time from .env (VITE_GOOGLE_CLIENT_ID); a Settings override wins if present. */
 const BUILT_IN_CLIENT_ID: string = import.meta.env.VITE_GOOGLE_CLIENT_ID ?? ''
@@ -18,66 +17,118 @@ export function hasBuiltInClientId(): boolean {
   return BUILT_IN_CLIENT_ID.length > 0
 }
 
+/* ===== Auth: full-page redirect flow (implicit grant) =====
+ * Popups are blocked in installed PWAs (especially iOS Safari), so sign-in
+ * navigates to Google and Google redirects back here with the token in the
+ * URL hash. Tokens live for ~1h in sessionStorage; renewal is a quick
+ * prompt=none bounce guarded against redirect loops. */
+
 let accessToken: string | null = null
 let tokenExpiry = 0
 
-declare global {
-  interface Window {
-    google?: any
-  }
-}
+const SS_TOKEN = 'gmailToken'
+const SS_TOKEN_EXP = 'gmailTokenExp'
+const SS_AUTH_STATE = 'gmailAuthState'
+const SS_SILENT_AT = 'gmailSilentAt'
+const SILENT_RETRY_MS = 3 * 60 * 1000
 
-function loadGsi(): Promise<void> {
-  return new Promise((resolve, reject) => {
-    if (window.google?.accounts?.oauth2) return resolve()
-    const s = document.createElement('script')
-    s.src = GSI_SRC
-    s.async = true
-    s.onload = () => resolve()
-    s.onerror = () => reject(new Error('Could not load Google Sign-In. Check your internet connection.'))
-    document.head.appendChild(s)
+/** OAuth authorization URL for the redirect flow. Pure; unit tested. */
+export function buildAuthUrl(clientId: string, redirectUri: string, opts: { state: string; silent?: boolean }): string {
+  const params = new URLSearchParams({
+    client_id: clientId,
+    redirect_uri: redirectUri,
+    response_type: 'token',
+    scope: SCOPE,
+    state: opts.state,
+    ...(opts.silent ? { prompt: 'none' } : {}),
   })
+  return `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`
 }
 
-/** Interactive connect: opens Google's sign-in popup. Uses the built-in Client ID, or a Settings override. */
+export type AuthHashResult =
+  | { accessToken: string; expiresIn: number; state: string }
+  | { error: string; state: string }
+  | null
+
+/** Parse Google's redirect-return hash. Pure; unit tested. */
+export function parseAuthHash(hash: string): AuthHashResult {
+  if (!hash.startsWith('#')) return null
+  const p = new URLSearchParams(hash.slice(1))
+  const state = p.get('state') ?? ''
+  const error = p.get('error')
+  if (error) return { error, state }
+  const token = p.get('access_token')
+  if (!token) return null
+  return { accessToken: token, expiresIn: Number(p.get('expires_in') ?? 3600), state }
+}
+
+/** The app's own URL, exactly as Google must have it in Authorized redirect URIs. */
+function redirectUri(): string {
+  return location.origin + location.pathname.replace(/index\.html$/, '')
+}
+
+function newState(kind: 'i' | 's'): string {
+  const nonce = crypto.getRandomValues(new Uint32Array(2)).join('')
+  const state = `${kind}:${nonce}`
+  sessionStorage.setItem(SS_AUTH_STATE, state)
+  return state
+}
+
+/** Interactive connect: navigates this page to Google's sign-in. The page unloads;
+ * handleAuthReturn() picks the result up when Google redirects back. */
 export async function connectGmail(): Promise<void> {
   const clientId = await resolveClientId()
   if (!clientId) throw new Error('This build has no Google Client ID. Add one under Advanced setup below.')
-  await loadGsi()
-  await requestToken(clientId, '')
-  await setSetting('gmailConnected', 'true')
+  location.assign(buildAuthUrl(clientId, redirectUri(), { state: newState('i') }))
 }
 
-function requestToken(clientId: string, promptMode: '' | 'none'): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const client = window.google.accounts.oauth2.initTokenClient({
-      client_id: clientId,
-      scope: SCOPE,
-      prompt: promptMode,
-      callback: (resp: any) => {
-        if (resp.error) return reject(new Error(resp.error_description ?? resp.error))
-        accessToken = resp.access_token
-        tokenExpiry = Date.now() + (resp.expires_in - 60) * 1000
-        resolve()
-      },
-      error_callback: (err: any) => reject(new Error(err?.message ?? 'Google sign-in was closed.')),
-    })
-    client.requestAccessToken()
-  })
+/** Call once on app start, before the first sync. Consumes a Google redirect
+ * return if one is in the URL. Returns a user-facing message, or null. */
+export async function handleAuthReturn(): Promise<string | null> {
+  const parsed = parseAuthHash(location.hash)
+  if (!parsed) return null
+  history.replaceState(null, '', location.pathname + location.search)
+  const expected = sessionStorage.getItem(SS_AUTH_STATE)
+  sessionStorage.removeItem(SS_AUTH_STATE)
+  const silent = parsed.state.startsWith('s:')
+
+  if ('error' in parsed) {
+    if (silent) {
+      // silent renewal failed — the Google session is gone; require a manual sign-in
+      await setSetting('gmailConnected', 'false')
+      return null
+    }
+    return `Google sign-in didn’t complete (${parsed.error}). Try again from Settings.`
+  }
+  if (expected && parsed.state !== expected) return null // stale or injected return — ignore
+  accessToken = parsed.accessToken
+  tokenExpiry = Date.now() + (parsed.expiresIn - 60) * 1000
+  sessionStorage.setItem(SS_TOKEN, accessToken)
+  sessionStorage.setItem(SS_TOKEN_EXP, String(tokenExpiry))
+  await setSetting('gmailConnected', 'true')
+  return silent ? null : 'Gmail connected.'
 }
 
 async function ensureToken(): Promise<boolean> {
+  if (!accessToken) {
+    const stored = sessionStorage.getItem(SS_TOKEN)
+    const exp = Number(sessionStorage.getItem(SS_TOKEN_EXP) ?? 0)
+    if (stored && Date.now() < exp) { accessToken = stored; tokenExpiry = exp }
+  }
   if (accessToken && Date.now() < tokenExpiry) return true
+
   const clientId = await resolveClientId()
   const connected = await getSetting('gmailConnected')
   if (!clientId || connected !== 'true') return false
-  try {
-    await loadGsi()
-    await requestToken(clientId, 'none')
-    return true
-  } catch {
-    return false
+
+  // Renew via a quick prompt=none redirect bounce — only when the app is visible
+  // and we haven't just tried (prevents redirect loops).
+  const lastSilent = Number(sessionStorage.getItem(SS_SILENT_AT) ?? 0)
+  if (document.visibilityState === 'visible' && Date.now() - lastSilent > SILENT_RETRY_MS) {
+    sessionStorage.setItem(SS_SILENT_AT, String(Date.now()))
+    location.assign(buildAuthUrl(clientId, redirectUri(), { state: newState('s'), silent: true }))
   }
+  return false
 }
 
 async function gmailFetch(path: string): Promise<any> {
@@ -203,5 +254,8 @@ export async function syncGmail(
 
 export async function disconnectGmail(): Promise<void> {
   accessToken = null
+  tokenExpiry = 0
+  sessionStorage.removeItem(SS_TOKEN)
+  sessionStorage.removeItem(SS_TOKEN_EXP)
   await setSetting('gmailConnected', 'false')
 }

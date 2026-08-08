@@ -26,7 +26,7 @@ One-time developer setup (so the button works):
 2. Create a free Google OAuth Client ID at https://console.cloud.google.com/ → *APIs & Services*:
    - Enable the **Gmail API**.
    - *OAuth consent screen*: External, add the Gmail address as a test user.
-   - *Credentials → Create OAuth client ID → Web application*; under **Authorized JavaScript origins** add every origin the app is served from (e.g. `http://localhost:4173` and your hosting URL like `https://<username>.github.io`).
+   - *Credentials → Create OAuth client ID → Web application*; under **Authorized JavaScript origins** add every origin the app is served from (e.g. `http://localhost:4173` and your hosting URL like `https://<username>.github.io`), and under **Authorized redirect URIs** add the app's full URL(s) — e.g. `https://<username>.github.io/aneesh-budget/` and `http://localhost:4173/`. Sign-in uses a full-page redirect (popups are blocked in installed mobile web apps), so the redirect URIs are required.
 3. Copy `.env.example` to `.env`, set `VITE_GOOGLE_CLIENT_ID`, and run `npm run build`. The ID is baked into the app — nothing to paste on the phone. (A per-device override still exists under *Settings → Advanced setup*.)
 
 ## Installing on a phone

@@ -88,14 +88,12 @@ export default function Settings() {
   const doConnect = async () => {
     try {
       setBusy(true)
+      // Navigates this page to Google's sign-in; the app resumes (and syncs)
+      // automatically when Google redirects back.
       await connectGmail()
-      const result = await syncGmail({}, (done, total) => setScanProgress({ done, total }))
-      flash('ok', `Gmail connected. ${result.message}`)
     } catch (e) {
       flash('err', e instanceof Error ? e.message : 'Could not connect Gmail.')
-    } finally {
       setBusy(false)
-      setScanProgress(null)
     }
   }
 

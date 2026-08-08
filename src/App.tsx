@@ -4,7 +4,7 @@ import Transactions from './screens/Transactions'
 import Trends from './screens/Trends'
 import Settings from './screens/Settings'
 import TabBar, { type Tab } from './components/TabBar'
-import { syncGmail } from './lib/gmail'
+import { syncGmail, handleAuthReturn } from './lib/gmail'
 
 const SYNC_INTERVAL_MS = 5 * 60 * 1000
 /** Don't re-sync on foreground if we synced more recently than this (rapid app switching). */
@@ -37,7 +37,13 @@ export default function App() {
         syncing = false
       }
     }
-    run()
+    // Consume a Google sign-in redirect return (if any) before the first sync
+    handleAuthReturn().then(note => {
+      if (note && !cancelled) {
+        setSyncNote(note)
+        setTimeout(() => setSyncNote(null), 4000)
+      }
+    }).finally(run)
     const id = setInterval(run, SYNC_INTERVAL_MS)
     // Mobile browsers freeze timers while the app is backgrounded or the screen is
     // locked — sync immediately whenever the app comes back to the foreground.
