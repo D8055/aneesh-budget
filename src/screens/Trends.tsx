@@ -7,12 +7,32 @@ import { db } from '../db'
 import { CATEGORIES } from '../types'
 import { colorForCategory } from '../lib/categoryColors'
 import { fmtCompact, fmtCents } from '../lib/money'
-import { monthKey, monthLabelShort } from '../lib/dates'
+import { monthKey, monthLabel, monthLabelShort } from '../lib/dates'
+import BreakdownSheet, { type Breakdown } from '../components/BreakdownSheet'
 
 const MONTHS_SHOWN = 12
 
 export default function Trends() {
   const [focusCategory, setFocusCategory] = useState<string>('All spending')
+  const [breakdown, setBreakdown] = useState<Breakdown | null>(null)
+
+  /** Tap a month on either chart → list what that month's numbers are made of. */
+  const showMonth = async (key: string, category?: string) => {
+    let txs = (await db.transactions.where('date').between(`${key}-00`, `${key}-99`).toArray())
+      .filter(t => t.category !== 'Transfers')
+    if (category) txs = txs.filter(t => t.direction === 'expense' && t.category === category)
+    const spent = txs.filter(t => t.direction === 'expense').reduce((s, t) => s + t.amountCents, 0)
+    const income = txs.filter(t => t.direction === 'income').reduce((s, t) => s + t.amountCents, 0)
+    txs.sort((a, b) => b.amountCents - a.amountCents)
+    setBreakdown({
+      title: category ? `${category} — ${monthLabel(key)}` : monthLabel(key),
+      description: category
+        ? `All ${category} spending in ${monthLabel(key)}.`
+        : `Spent ${fmtCents(spent)}, received ${fmtCents(income)}. Transfers between your own accounts are excluded. Largest first:`,
+      txs,
+      totalCents: spent,
+    })
+  }
   const customNames = useLiveQuery(async () =>
     (await db.customCategories.toArray()).map(c => c.name).filter(n => !(CATEGORIES as readonly string[]).includes(n))) ?? []
 
@@ -61,8 +81,8 @@ export default function Trends() {
   }
 
   const focusData = focusCategory === 'All spending'
-    ? data.map(d => ({ month: d.month, value: d.Spent }))
-    : data.map(d => ({ month: d.month, value: (d as Record<string, any>)[focusCategory] ?? 0 }))
+    ? data.map(d => ({ month: d.month, key: d.key, value: d.Spent }))
+    : data.map(d => ({ month: d.month, key: d.key, value: (d as Record<string, any>)[focusCategory] ?? 0 }))
   const focusColor = focusCategory === 'All spending' ? '#5F57C7' : colorForCategory(focusCategory).ink
 
   const dollarTick = (v: number) => fmtCompact(v * 100)
@@ -79,7 +99,7 @@ export default function Trends() {
         <h2>Income vs spending</h2>
         <div style={{ height: 220 }}>
           <ResponsiveContainer>
-            <BarChart data={data} barGap={2}>
+            <BarChart data={data} barGap={2} onClick={(s: any) => { const key = s?.activePayload?.[0]?.payload?.key; if (key) showMonth(key) }}>
               <CartesianGrid vertical={false} stroke="#E7E9F2" />
               <XAxis dataKey="month" tickLine={false} axisLine={false} tick={{ fontSize: 11, fill: '#6E7387' }} />
               <YAxis tickFormatter={dollarTick} tickLine={false} axisLine={false} tick={{ fontSize: 11, fill: '#6E7387' }} width={44} />
@@ -103,7 +123,7 @@ export default function Trends() {
         </div>
         <div style={{ height: 200 }}>
           <ResponsiveContainer>
-            <LineChart data={focusData}>
+            <LineChart data={focusData} onClick={(s: any) => { const key = s?.activePayload?.[0]?.payload?.key; if (key) showMonth(key, focusCategory === 'All spending' ? undefined : focusCategory) }}>
               <CartesianGrid vertical={false} stroke="#E7E9F2" />
               <XAxis dataKey="month" tickLine={false} axisLine={false} tick={{ fontSize: 11, fill: '#6E7387' }} />
               <YAxis tickFormatter={dollarTick} tickLine={false} axisLine={false} tick={{ fontSize: 11, fill: '#6E7387' }} width={44} />
@@ -112,7 +132,10 @@ export default function Trends() {
             </LineChart>
           </ResponsiveContainer>
         </div>
+        <p className="muted" style={{ marginTop: 8 }}>Tap any month on a chart to see the transactions behind it.</p>
       </section>
+
+      <BreakdownSheet breakdown={breakdown} onClose={() => setBreakdown(null)} />
     </main>
   )
 }
