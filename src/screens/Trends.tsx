@@ -13,7 +13,8 @@ const MONTHS_SHOWN = 12
 
 export default function Trends() {
   const [focusCategory, setFocusCategory] = useState<string>('All spending')
-  const customNames = useLiveQuery(async () => (await db.customCategories.toArray()).map(c => c.name)) ?? []
+  const customNames = useLiveQuery(async () =>
+    (await db.customCategories.toArray()).map(c => c.name).filter(n => !(CATEGORIES as readonly string[]).includes(n))) ?? []
 
   const data = useLiveQuery(async () => {
     const all = await db.transactions.toArray()

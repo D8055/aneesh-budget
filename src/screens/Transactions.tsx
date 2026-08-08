@@ -36,7 +36,7 @@ export default function Transactions() {
   const addRef = useRef<HTMLDialogElement>(null)
 
   const customNames = useLiveQuery(async () => (await db.customCategories.toArray()).map(c => c.name)) ?? []
-  const allCategories = [...CATEGORIES, ...customNames]
+  const allCategories = [...CATEGORIES, ...customNames.filter(n => !(CATEGORIES as readonly string[]).includes(n))]
 
   const txs = useLiveQuery(async () => {
     let all = await db.transactions.orderBy('date').reverse().toArray()

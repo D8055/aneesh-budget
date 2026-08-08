@@ -42,10 +42,12 @@ export async function eraseAllData(): Promise<void> {
   ])
 }
 
-/** Built-in categories plus any the user has created. */
+/** Built-in categories plus any the user has created (customs shadowed by a
+ * later-added built-in of the same name are dropped). */
 export async function getAllCategoryNames(): Promise<string[]> {
   const custom = await db.customCategories.toArray()
-  return [...CATEGORIES, ...custom.map(c => c.name)]
+  const builtIns = new Set<string>(CATEGORIES)
+  return [...CATEGORIES, ...custom.map(c => c.name).filter(n => !builtIns.has(n))]
 }
 
 export const db = new BudgetDB()

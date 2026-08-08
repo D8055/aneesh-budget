@@ -128,38 +128,46 @@ export interface SyncResult {
 /** Fetch alert emails from all known banks and payment apps and turn them into transactions.
  * The first-ever sync (and any explicit fullHistory re-scan) walks the entire mailbox;
  * later syncs only fetch mail newer than the last sync. */
-export async function syncGmail(options: { fullHistory?: boolean } = {}): Promise<SyncResult> {
+export async function syncGmail(
+  options: { fullHistory?: boolean } = {},
+  onProgress?: (done: number, total: number) => void,
+): Promise<SyncResult> {
   if (!(await ensureToken())) {
     return { ok: false, added: 0, scanned: 0, message: 'Gmail is not connected.' }
   }
   const lastSync = await getSetting('gmailLastSyncEpoch')
   const q = encodeURIComponent(buildGmailQuery(lastSync, options.fullHistory ?? false))
 
+  // Collect every matching message id first so progress can report done/total
+  const allIds: string[] = []
+  let pageToken: string | undefined
+  do {
+    const list = await gmailFetch(`messages?q=${q}&maxResults=500${pageToken ? `&pageToken=${pageToken}` : ''}`)
+    for (const m of list.messages ?? []) allIds.push(m.id)
+    pageToken = list.nextPageToken
+  } while (pageToken)
+  onProgress?.(0, allIds.length)
+
   let scanned = 0
   const txs: Transaction[] = []
   const userRules = await db.rules.toArray()
-  let pageToken: string | undefined
-  do {
-    const list = await gmailFetch(`messages?q=${q}&maxResults=100${pageToken ? `&pageToken=${pageToken}` : ''}`)
-    const ids: { id: string }[] = list.messages ?? []
-    pageToken = list.nextPageToken
-    for (const { id } of ids) {
-      const msg = await gmailFetch(`messages/${id}?format=full`)
-      scanned++
-      const headers: { name: string; value: string }[] = msg.payload?.headers ?? []
-      const subject = headers.find(h => h.name.toLowerCase() === 'subject')?.value ?? ''
-      const from = headers.find(h => h.name.toLowerCase() === 'from')?.value ?? ''
-      const receivedDate = new Date(Number(msg.internalDate)).toISOString().slice(0, 10)
-      const body = extractBody(msg.payload)
-      const email: EmailInput = { subject, body, receivedDate }
+  for (const id of allIds) {
+    const msg = await gmailFetch(`messages/${id}?format=full`)
+    scanned++
+    onProgress?.(scanned, allIds.length)
+    const headers: { name: string; value: string }[] = msg.payload?.headers ?? []
+    const subject = headers.find(h => h.name.toLowerCase() === 'subject')?.value ?? ''
+    const from = headers.find(h => h.name.toLowerCase() === 'from')?.value ?? ''
+    const receivedDate = new Date(Number(msg.internalDate)).toISOString().slice(0, 10)
+    const body = extractBody(msg.payload)
+    const email: EmailInput = { subject, body, receivedDate }
 
-      const parsed = parseProviderEmail(from, email)
-      if (parsed) {
-        const category = categorize(parsed.merchant, parsed.rawText, parsed.direction, userRules)
-        txs.push({ ...parsed, category })
-      }
+    const parsed = parseProviderEmail(from, email)
+    if (parsed) {
+      const category = categorize(parsed.merchant, parsed.rawText, parsed.direction, userRules)
+      txs.push({ ...parsed, category })
     }
-  } while (pageToken)
+  }
 
   const added = await addTransactions(txs)
   await setSetting('gmailLastSyncEpoch', String(Math.floor(Date.now() / 1000)))

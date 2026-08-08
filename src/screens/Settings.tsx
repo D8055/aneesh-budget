@@ -31,6 +31,7 @@ export default function Settings() {
   const customCats = useLiveQuery(() => db.customCategories.toArray()) ?? []
   const [cardForm, setCardForm] = useState({ name: '', limit: '', balance: '' })
   const [newCat, setNewCat] = useState('')
+  const [scanProgress, setScanProgress] = useState<{ done: number; total: number } | null>(null)
 
   useEffect(() => {
     getSetting('gmailClientId').then(v => v && setClientId(v))
@@ -88,25 +89,26 @@ export default function Settings() {
     try {
       setBusy(true)
       await connectGmail()
-      const result = await syncGmail()
+      const result = await syncGmail({}, (done, total) => setScanProgress({ done, total }))
       flash('ok', `Gmail connected. ${result.message}`)
     } catch (e) {
       flash('err', e instanceof Error ? e.message : 'Could not connect Gmail.')
     } finally {
       setBusy(false)
+      setScanProgress(null)
     }
   }
 
   const doSync = async (fullHistory = false) => {
     setBusy(true)
-    if (fullHistory) flash('info', 'Scanning your whole email history — this can take a minute…')
     try {
-      const result = await syncGmail({ fullHistory })
+      const result = await syncGmail({ fullHistory }, (done, total) => setScanProgress({ done, total }))
       flash(result.ok ? 'ok' : 'err', `${result.message} (${result.scanned} emails scanned)`)
     } catch (e) {
       flash('err', e instanceof Error ? e.message : 'Sync failed.')
     } finally {
       setBusy(false)
+      setScanProgress(null)
     }
   }
 
@@ -207,7 +209,27 @@ export default function Settings() {
             <button className="btn ghost small" onClick={() => disconnectGmail().then(() => flash('info', 'Gmail disconnected.'))}>Sign out</button>
           </div>
         )}
-        {connected && lastSync && <p className="muted">Last synced {new Date(lastSync).toLocaleString()}</p>}
+        {scanProgress && (
+          <div>
+            <div className="row between" style={{ marginBottom: 6 }}>
+              <span className="muted">Reading emails…</span>
+              <span className="muted num">
+                {scanProgress.total > 0 ? `${scanProgress.done} / ${scanProgress.total}` : 'searching…'}
+              </span>
+            </div>
+            <div className="cat-track" style={{ height: 8 }}>
+              <div
+                className="cat-fill"
+                style={{
+                  width: scanProgress.total > 0 ? `${(scanProgress.done / scanProgress.total) * 100}%` : '10%',
+                  background: 'var(--lilac)',
+                  transition: 'width 0.3s ease',
+                }}
+              />
+            </div>
+          </div>
+        )}
+        {connected && lastSync && !scanProgress && <p className="muted">Last synced {new Date(lastSync).toLocaleString()}</p>}
         <details>
           <summary className="muted" style={{ cursor: 'pointer' }}>Advanced setup</summary>
           <div className="stack" style={{ marginTop: 10 }}>
