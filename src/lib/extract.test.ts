@@ -64,6 +64,17 @@ describe('account separation from "ending in NNNN"', () => {
       email('Deposit posted', 'A deposit of $500.00 from ACME CORP has posted to your account ending in ***4321.'))!
     expect(tx.accountLast4).toBe('4321')
   })
+  it('stays fast on real-world HTML-stripped bodies (no catastrophic backtracking)', () => {
+    // HTML emails stripped to text leave long whitespace runs right after words
+    // like "account" — the regex must not freeze the UI thread on them.
+    const chunk = `your account   ${'\n \t '.repeat(400)}  has updates. card ${' '.repeat(900)} benefits!`
+    const body = chunk.repeat(30) + ' card ending in 1234'
+    const start = performance.now()
+    const result = extractAccountLast4(body)
+    const elapsed = performance.now() - start
+    expect(result).toBe('1234')
+    expect(elapsed).toBeLessThan(250)
+  })
   it('leaves accountLast4 undefined when absent', () => {
     const tx = parseProviderEmail('Zelle <no-reply@zellepay.com>',
       email('Jane Smith sent you $25.00', 'Jane Smith sent you $25.00 with Zelle.'))!

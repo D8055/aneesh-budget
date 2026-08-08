@@ -139,6 +139,7 @@ export async function syncGmail(
   const q = encodeURIComponent(buildGmailQuery(lastSync, options.fullHistory ?? false))
 
   // Collect every matching message id first so progress can report done/total
+  onProgress?.(0, 0) // shows the "searching…" state immediately
   const allIds: string[] = []
   let pageToken: string | undefined
   do {
@@ -152,20 +153,24 @@ export async function syncGmail(
   const txs: Transaction[] = []
   const userRules = await db.rules.toArray()
   for (const id of allIds) {
-    const msg = await gmailFetch(`messages/${id}?format=full`)
     scanned++
     onProgress?.(scanned, allIds.length)
-    const headers: { name: string; value: string }[] = msg.payload?.headers ?? []
-    const subject = headers.find(h => h.name.toLowerCase() === 'subject')?.value ?? ''
-    const from = headers.find(h => h.name.toLowerCase() === 'from')?.value ?? ''
-    const receivedDate = new Date(Number(msg.internalDate)).toISOString().slice(0, 10)
-    const body = extractBody(msg.payload)
-    const email: EmailInput = { subject, body, receivedDate }
+    try {
+      const msg = await gmailFetch(`messages/${id}?format=full`)
+      const headers: { name: string; value: string }[] = msg.payload?.headers ?? []
+      const subject = headers.find(h => h.name.toLowerCase() === 'subject')?.value ?? ''
+      const from = headers.find(h => h.name.toLowerCase() === 'from')?.value ?? ''
+      const receivedDate = new Date(Number(msg.internalDate)).toISOString().slice(0, 10)
+      const body = extractBody(msg.payload)
+      const email: EmailInput = { subject, body, receivedDate }
 
-    const parsed = parseProviderEmail(from, email)
-    if (parsed) {
-      const category = categorize(parsed.merchant, parsed.rawText, parsed.direction, userRules)
-      txs.push({ ...parsed, category })
+      const parsed = parseProviderEmail(from, email)
+      if (parsed) {
+        const category = categorize(parsed.merchant, parsed.rawText, parsed.direction, userRules)
+        txs.push({ ...parsed, category })
+      }
+    } catch {
+      // one unreadable/unparseable email must never abort the whole scan
     }
   }
 

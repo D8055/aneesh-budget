@@ -26,22 +26,27 @@ export function extractLabeledMerchant(text: string): string | null {
   return merchant && merchant.length >= 2 ? merchant : null
 }
 
-/** Longest run of filler allowed between the card/account keyword and the digits.
- * Keeps 4-digit years and amounts elsewhere in the email from being mistaken for a last-4. */
-const MAX_KEYWORD_GAP = 20
+/** card/crd (card-like) or account/acct (account-like), then a SHORT bounded gap,
+ * then exactly four digits that are not part of a longer number. The gap is a single
+ * lazy wildcard — deliberately unambiguous, because a multi-group whitespace pattern
+ * here caused catastrophic backtracking on HTML-stripped email bodies (long
+ * whitespace runs after the word "account" froze the UI thread). Gap content is
+ * validated separately with plain string ops. */
+const LAST4_RE = /\b(cards?|crds?|accounts?|acct)\b(.{0,24}?)(\d{4})(?!\d)/gi
 
-/** card/crd (card-like) or account/acct (account-like), then optional
- * "number"/"ending"/"in" filler and masking punctuation (":", "#", "*", "x", "-", "."),
- * then exactly four digits that are not part of a longer number. */
-const LAST4_RE =
-  /\b(cards?|crds?|accounts?|acct\.?)((?:\s*(?:number|no\.?|#)?\s*(?:ending|end)?\s*(?:in|with)?\s*[-:#*x•.\s]{0,10}))(\d{4})(?!\d)/gi
+/** True when the keyword→digits gap contains only connective filler
+ * ("number", "ending in", masking chars) — not arbitrary sentence text. */
+function isFillerGap(gap: string): boolean {
+  return gap.replace(/\b(?:number|no|ending|end|in|with)\b/gi, '').replace(/[\s.:#*x•-]/gi, '') === ''
+}
 
 type Last4Mention = { kind: 'card' | 'account'; last4: string }
 
 function findLast4Mentions(text: string): Last4Mention[] {
+  const collapsed = text.replace(/\s+/g, ' ')
   const mentions: Last4Mention[] = []
-  for (const m of text.matchAll(LAST4_RE)) {
-    if (m[2].length > MAX_KEYWORD_GAP) continue
+  for (const m of collapsed.matchAll(LAST4_RE)) {
+    if (!isFillerGap(m[2])) continue
     mentions.push({ kind: /^(?:card|crd)/i.test(m[1]) ? 'card' : 'account', last4: m[3] })
   }
   return mentions
