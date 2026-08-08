@@ -7,6 +7,8 @@ import TabBar, { type Tab } from './components/TabBar'
 import { syncGmail } from './lib/gmail'
 
 const SYNC_INTERVAL_MS = 5 * 60 * 1000
+/** Don't re-sync on foreground if we synced more recently than this (rapid app switching). */
+const FOREGROUND_THROTTLE_MS = 60 * 1000
 
 export default function App() {
   const [tab, setTab] = useState<Tab>('home')
@@ -17,7 +19,12 @@ export default function App() {
     // OS never silently evicts transactions under storage pressure.
     navigator.storage?.persist?.().catch(() => {})
     let cancelled = false
+    let syncing = false
+    let lastRunAt = 0
     const run = async () => {
+      if (syncing) return
+      syncing = true
+      lastRunAt = Date.now()
       try {
         const result = await syncGmail()
         if (!cancelled && result.ok && result.added > 0) {
@@ -25,12 +32,20 @@ export default function App() {
           setTimeout(() => setSyncNote(null), 4000)
         }
       } catch {
-        // offline or token expired — next interval will retry
+        // offline or token expired — the next trigger will retry
+      } finally {
+        syncing = false
       }
     }
     run()
     const id = setInterval(run, SYNC_INTERVAL_MS)
-    return () => { cancelled = true; clearInterval(id) }
+    // Mobile browsers freeze timers while the app is backgrounded or the screen is
+    // locked — sync immediately whenever the app comes back to the foreground.
+    const onVisible = () => {
+      if (document.visibilityState === 'visible' && Date.now() - lastRunAt > FOREGROUND_THROTTLE_MS) run()
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => { cancelled = true; clearInterval(id); document.removeEventListener('visibilitychange', onVisible) }
   }, [])
 
   return (
