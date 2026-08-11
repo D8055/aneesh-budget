@@ -1,5 +1,6 @@
-// Generates public/icons/icon-192.png and icon-512.png — a pastel donut chart mark —
-// with no image dependencies: pixels are computed directly and written as PNG chunks.
+// Generates public/icons/icon.svg, icon-192.png, and icon-512.png — a pixel-art
+// money bag on a black field — with no image dependencies: pixels come from the
+// GRID below and are written directly as PNG chunks / SVG rects.
 import { deflateSync } from 'node:zlib'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -7,33 +8,39 @@ import { fileURLToPath } from 'node:url'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 
-const SEGMENTS = [
-  { until: 0.32, color: [0xbf, 0xe8, 0xd4] }, // mint
-  { until: 0.52, color: [0xfb, 0xe7, 0xa1] }, // butter
-  { until: 0.68, color: [0xf6, 0xc6, 0xc6] }, // blush
-  { until: 0.86, color: [0xcd, 0xc7, 0xf2] }, // lilac
-  { until: 1.0, color: [0xbf, 0xdc, 0xf4] },  // sky
+// 16x16 cells; 192 and 512 are both exact multiples so the pixels stay crisp.
+// . background  G green  D dark green (shade)  O orange tie  o dark orange  K black (on the bag)
+const GRID = [
+  '................',
+  '......GGG.......',
+  '.....GGGDG......',
+  '......GDG.......',
+  '.....OOOoo......',
+  '.....GGGGGD.....',
+  '....GGGGKGGD....',
+  '...GGGGKKKKDD...',
+  '..GGGGKGKGGGDD..',
+  '..GGGGKGKGGGDD..',
+  '..GGGGGKKKGGDD..',
+  '..GGGGGGKGKGDD..',
+  '..GGGGGGKGKGDD..',
+  '...GGGKKKKGDD...',
+  '....DDDDKDDD....',
+  '................',
 ]
-const BG = [0x5f, 0x57, 0xc7] // indigo field so the mark reads at small sizes
+
+const PALETTE = {
+  '.': [0x00, 0x00, 0x00], // black background
+  K: [0x00, 0x00, 0x00],   // dollar sign / outline on the bag
+  G: [0x5b, 0xb9, 0x44],   // bag green
+  D: [0x3d, 0x8a, 0x2e],   // shaded green
+  O: [0xf0, 0x91, 0x3a],   // tie orange
+  o: [0xd9, 0x70, 0x1f],   // shaded orange
+}
 
 function pixel(x, y, size) {
-  const c = size / 2
-  const dx = (x - c) / c
-  const dy = (y - c) / c
-  const r = Math.sqrt(dx * dx + dy * dy)
-  if (r < 0.72 && r > 0.34) {
-    let angle = Math.atan2(dy, dx) / (2 * Math.PI) + 0.25 // start at 12 o'clock
-    if (angle < 0) angle += 1
-    const gap = 0.012
-    for (const seg of SEGMENTS) {
-      if (angle < seg.until) {
-        const prev = SEGMENTS[SEGMENTS.indexOf(seg) - 1]?.until ?? 0
-        if (angle - prev < gap || seg.until - angle < gap) return BG
-        return seg.color
-      }
-    }
-  }
-  return BG
+  const cell = size / GRID.length
+  return PALETTE[GRID[Math.floor(y / cell)][Math.floor(x / cell)]]
 }
 
 function crc32(buf) {
@@ -78,7 +85,28 @@ function png(size) {
   ])
 }
 
+function svg() {
+  const hex = ([r, g, b]) => `#${[r, g, b].map(v => v.toString(16).padStart(2, '0')).join('')}`
+  const rects = []
+  for (let y = 0; y < GRID.length; y++) {
+    for (let x = 0; x < GRID[y].length; x++) {
+      const ch = GRID[y][x]
+      if (ch === '.' || ch === 'K') continue // black cells are covered by the field
+      rects.push(`  <rect x="${x}" y="${y}" width="1" height="1" fill="${hex(PALETTE[ch])}"/>`)
+    }
+  }
+  return [
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">',
+    '  <rect width="16" height="16" rx="3" fill="#000000"/>',
+    ...rects,
+    '</svg>',
+    '',
+  ].join('\n')
+}
+
 mkdirSync(join(root, 'public', 'icons'), { recursive: true })
+writeFileSync(join(root, 'public', 'icons', 'icon.svg'), svg())
+console.log('icon.svg written')
 for (const size of [192, 512]) {
   writeFileSync(join(root, 'public', 'icons', `icon-${size}.png`), png(size))
   console.log(`icon-${size}.png written`)
