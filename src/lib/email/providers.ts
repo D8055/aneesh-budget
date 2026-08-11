@@ -4,6 +4,7 @@ import { dedupeHash } from '../dedupe'
 import { parseSchwabEmail, type EmailInput } from './schwabEmail'
 import { parseVenmoEmail } from './venmoEmail'
 import { stripThresholds, extractLabeledAmount, extractLabeledMerchant, extractAccountLast4 } from './extract'
+import { applyAccountTitle } from '../accounts'
 
 export type ParsedTx = Omit<Transaction, 'category'>
 
@@ -152,7 +153,7 @@ export function parseProviderEmail(from: string, mail: EmailInput): ParsedTx | n
   }
   if (provider === 'Schwab') {
     const tx = parseSchwabEmail(mail)
-    return tx ? { ...tx, provider, accountLast4: extractAccountLast4(allText) } : null
+    return tx ? { ...tx, provider, accountLast4: last4For(tx.direction) } : null
   }
 
   const segments = [mail.subject.replace(/\s+/g, ' ').trim(), mail.body.replace(/\s+/g, ' ').trim()]
@@ -182,18 +183,20 @@ export function parseProviderEmail(from: string, mail: EmailInput): ParsedTx | n
     const bank = parseBankText(seg)
     if (bank) {
       const date = extractDate(segments.join(' ')) ?? mail.receivedDate
-      const merchant = bank.merchant ?? `${provider} transaction`
+      const last4 = last4For(bank.direction)
+      const fallback = `${provider} transaction`
+      const merchant = applyAccountTitle(bank.merchant ?? fallback, last4, allText, !bank.merchant)
       return {
         date,
         amountCents: bank.cents,
         direction: bank.direction,
         source: 'bank-email',
         provider,
-        accountLast4: last4For(bank.direction),
+        accountLast4: last4,
         merchant,
         rawText: segments.join(' | ').slice(0, 500),
         dedupeHash: dedupeHash(date, bank.cents, merchant, bank.direction),
-        needsReview: !bank.merchant,
+        needsReview: !bank.merchant && merchant === fallback,
       }
     }
   }

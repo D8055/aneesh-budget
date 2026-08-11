@@ -5,6 +5,7 @@ import { parseSchwabCsv } from './csv/schwab'
 import { parseVenmoCsv } from './csv/venmo'
 import { parseSchwabEmail } from './email/schwabEmail'
 import { parseVenmoEmail } from './email/venmoEmail'
+import { parseProviderEmail } from './email/providers'
 import { categorize } from './categorize'
 import { CATEGORIES } from '../types'
 import { projectMonth } from './projection'
@@ -88,6 +89,46 @@ describe('Schwab email parser', () => {
   })
   it('returns null when there is no amount', () => {
     expect(parseSchwabEmail({ subject: 'Statement ready', body: 'Your statement is available.', receivedDate: '2026-08-01' })).toBeNull()
+  })
+  it('titles a "from account ending 134" alert with the account name, not the digits', () => {
+    const tx = parseSchwabEmail({
+      subject: 'Transfer alert',
+      body: 'A deposit of $500.00 from your account ending in 134 was credited to your account.',
+      receivedDate: '2026-08-08',
+    })!
+    expect(tx.merchant).toBe('Charles Schwab Checking')
+    expect(tx.needsReview).toBeFalsy()
+  })
+  it('keeps a real payee name even when the account digits appear too', () => {
+    const tx = parseSchwabEmail({
+      subject: 'Deposit alert',
+      body: 'A deposit from PAYROLL ACME CORP was credited to your account ending in 134. Amount: $1,850.00',
+      receivedDate: '2026-08-03',
+    })!
+    expect(tx.merchant).toContain('PAYROLL ACME CORP')
+  })
+})
+
+describe('account-titled provider emails', () => {
+  it('extracts the 3-digit ending and titles the transaction via parseProviderEmail', () => {
+    const tx = parseProviderEmail('Charles Schwab <donotreply@alerts.schwab.com>', {
+      subject: 'Transfer alert',
+      body: 'A deposit of $250.00 from your account ending in 134 was credited to your account on 08/05/2026.',
+      receivedDate: '2026-08-05',
+    })!
+    expect(tx.merchant).toBe('Charles Schwab Checking')
+    expect(tx.accountLast4).toBe('134')
+    expect(tx.provider).toBe('Schwab')
+    expect(tx.date).toBe('2026-08-05')
+  })
+  it('leaves unknown accounts titled as before', () => {
+    const tx = parseProviderEmail('Charles Schwab <donotreply@alerts.schwab.com>', {
+      subject: 'Deposit alert',
+      body: 'A deposit of $99.00 was credited to your account ending in 555.',
+      receivedDate: '2026-08-05',
+    })!
+    expect(tx.merchant).toBe('Schwab deposit')
+    expect(tx.accountLast4).toBe('555')
   })
 })
 

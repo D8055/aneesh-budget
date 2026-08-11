@@ -5,6 +5,8 @@ import { CATEGORIES, type Transaction } from '../types'
 import { fmtCents, parseCents } from '../lib/money'
 import { fmtDateShort, todayISO } from '../lib/dates'
 import { dedupeHash } from '../lib/dedupe'
+import { accountLabel } from '../lib/accounts'
+import type { Card } from '../types'
 import CategoryChip from '../components/CategoryChip'
 
 const SOURCE_LABEL: Record<Transaction['source'], string> = {
@@ -17,8 +19,10 @@ const SOURCE_LABEL: Record<Transaction['source'], string> = {
   manual: 'Manual',
 }
 
-const sourceLabel = (t: Transaction) =>
-  (t.provider ?? SOURCE_LABEL[t.source]) + (t.accountLast4 ? ` •${t.accountLast4}` : '')
+const sourceLabel = (t: Transaction, cards: Card[]) => {
+  const base = t.provider ?? SOURCE_LABEL[t.source]
+  return t.accountLast4 ? accountLabel(base, t.accountLast4, cards) : base
+}
 
 const EMPTY_FORM = { date: '', merchant: '', amount: '', direction: 'expense' as 'expense' | 'income', category: 'Miscellaneous' }
 
@@ -37,6 +41,7 @@ export default function Transactions() {
   const sheetRef = useRef<HTMLDialogElement>(null)
   const addRef = useRef<HTMLDialogElement>(null)
 
+  const cards = useLiveQuery(() => db.cards.toArray()) ?? []
   const customNames = useLiveQuery(async () => (await db.customCategories.toArray()).map(c => c.name)) ?? []
   const allCategories = [...CATEGORIES, ...customNames.filter(n => !(CATEGORIES as readonly string[]).includes(n))]
 
@@ -166,7 +171,7 @@ export default function Transactions() {
         <div className="chips">
           {['All', ...accounts].map(a => (
             <button key={a} className={`chip ${accountFilter === a ? 'active' : ''}`} onClick={() => setAccountFilter(a)}>
-              {a === 'All' ? 'All accounts' : `•${a}`}
+              {a === 'All' ? 'All accounts' : accountLabel(undefined, a, cards)}
             </button>
           ))}
         </div>
@@ -186,7 +191,7 @@ export default function Transactions() {
               <div className="tx-main">
                 <p className="tx-merchant">{t.merchant}</p>
                 <p className="tx-meta">
-                  {fmtDateShort(t.date)} · {sourceLabel(t)} · {t.category}
+                  {fmtDateShort(t.date)} · {sourceLabel(t, cards)} · {t.category}
                   {t.needsReview && <span className="tx-badge needs-review">review</span>}
                 </p>
                 {t.note && <p className="muted" style={{ fontSize: '0.78rem', fontStyle: 'italic', margin: '2px 0 0' }}>{t.note}</p>}

@@ -115,6 +115,12 @@ describe('account separation from "ending in NNNN"', () => {
   it('matches "account number ending in 1234"', () => {
     expect(extractAccountLast4('Your account number ending in 1234 was credited.')).toBe('1234')
   })
+  it('matches 3-digit endings like Schwab checking ("account ending in 134")', () => {
+    expect(extractAccountLast4('Your account ending in 134 was debited.')).toBe('134')
+  })
+  it('captures all four digits when four are shown', () => {
+    expect(extractAccountLast4('Your account ending in 0134 was debited.')).toBe('0134')
+  })
 
   // --- never match years or amounts ------------------------------------
   it('does not match a bare year', () => {

@@ -1,8 +1,11 @@
 import { useEffect, useRef } from 'react'
+import { useLiveQuery } from 'dexie-react-hooks'
 import type { Transaction } from '../types'
+import { db } from '../db'
 import CategoryChip from './CategoryChip'
 import { fmtCents } from '../lib/money'
 import { fmtDateShort } from '../lib/dates'
+import { accountLabel } from '../lib/accounts'
 
 export interface Breakdown {
   title: string
@@ -16,6 +19,7 @@ export interface Breakdown {
 /** Bottom sheet listing the transactions (and math) behind a tapped metric. */
 export default function BreakdownSheet({ breakdown, onClose }: { breakdown: Breakdown | null; onClose: () => void }) {
   const ref = useRef<HTMLDialogElement>(null)
+  const cards = useLiveQuery(() => db.cards.toArray()) ?? []
 
   useEffect(() => {
     if (breakdown && !ref.current?.open) ref.current?.showModal()
@@ -44,8 +48,9 @@ export default function BreakdownSheet({ breakdown, onClose }: { breakdown: Brea
                   <p className="tx-merchant">{t.merchant}</p>
                   <p className="tx-meta">
                     {fmtDateShort(t.date)}
-                    {t.provider ? ` · ${t.provider}` : ''}
-                    {t.accountLast4 ? ` •${t.accountLast4}` : ''}
+                    {t.accountLast4
+                      ? ` · ${accountLabel(t.provider, t.accountLast4, cards)}`
+                      : t.provider ? ` · ${t.provider}` : ''}
                   </p>
                 </div>
                 <span className={`tx-amount ${t.direction}`}>

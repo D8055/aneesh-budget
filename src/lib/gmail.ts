@@ -3,6 +3,7 @@ import { categorize, applyVenmoIncomeDefaults } from './categorize'
 import type { EmailInput } from './email/schwabEmail'
 import { parseProviderEmail } from './email/providers'
 import { buildGmailQuery } from './gmailQuery'
+import { accountNickname } from './accounts'
 import type { Transaction } from '../types'
 
 const SCOPE = 'https://www.googleapis.com/auth/gmail.readonly'
@@ -238,7 +239,12 @@ export async function syncGmail(
     const existingLast4s = new Set(existingCards.map(c => c.last4).filter(Boolean))
     for (const { provider, last4 } of seenPairs.values()) {
       if (existingLast4s.has(last4)) continue
-      await db.cards.add({ name: `${provider ?? 'Card'} •${last4}`, kind: 'credit', last4, limitCents: 0, balanceCents: 0 })
+      const nickname = accountNickname(last4)
+      await db.cards.add({
+        name: nickname ?? `${provider ?? 'Card'} •${last4}`,
+        kind: nickname && /checking|savings/i.test(nickname) ? 'debit' : 'credit',
+        last4, limitCents: 0, balanceCents: 0,
+      })
       existingLast4s.add(last4)
       newCards++
     }

@@ -144,6 +144,11 @@ export default function Settings() {
     await db.cards.update(id, { kind })
   }
 
+  const renameCard = async (c: Card) => {
+    const name = window.prompt('Name this card or account (shown on transactions instead of the number)', c.name)?.trim()
+    if (name && name !== c.name) await db.cards.update(c.id!, { name })
+  }
+
   const addCategory = async () => {
     const name = newCat.trim()
     if (!name) return
@@ -287,6 +292,7 @@ export default function Settings() {
                 onBlur={e => updateCardBalance(c.id!, e.target.value)}
               />
             </div>
+            <button className="btn ghost small" onClick={() => renameCard(c)}>Rename</button>
             <button className="btn ghost small" onClick={() => db.cards.delete(c.id!)}>Remove</button>
           </div>
         ))}

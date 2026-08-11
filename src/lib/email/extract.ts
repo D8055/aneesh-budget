@@ -27,12 +27,13 @@ export function extractLabeledMerchant(text: string): string | null {
 }
 
 /** card/crd (card-like) or account/acct (account-like), then a SHORT bounded gap,
- * then exactly four digits that are not part of a longer number. The gap is a single
+ * then three or four digits that are not part of a longer number (Schwab checking
+ * alerts print only three: "account ending in 134"). The gap is a single
  * lazy wildcard — deliberately unambiguous, because a multi-group whitespace pattern
  * here caused catastrophic backtracking on HTML-stripped email bodies (long
  * whitespace runs after the word "account" froze the UI thread). Gap content is
  * validated separately with plain string ops. */
-const LAST4_RE = /\b(cards?|crds?|accounts?|acct)\b(.{0,24}?)(\d{4})(?!\d)/gi
+const LAST4_RE = /\b(cards?|crds?|accounts?|acct)\b(.{0,24}?)(\d{3,4})(?!\d)/gi
 
 /** True when the keyword→digits gap contains only connective filler
  * ("number", "ending in", masking chars) — not arbitrary sentence text. */
@@ -52,8 +53,9 @@ function findLast4Mentions(text: string): Last4Mention[] {
   return mentions
 }
 
-/** Card/account last-4 from "card ending in 1234", "account ending in ***4321",
- * "card x1234", "acct x-1234", "Card ending: 1234", "account *1234", "acct ...1234".
+/** Card/account trailing digits from "card ending in 1234", "account ending in ***4321",
+ * "card x1234", "acct x-1234", "Card ending: 1234", "account *1234", "acct ...1234",
+ * and three-digit endings like Schwab checking's "account ending in 134".
  *
  * Payment/transfer alerts name two accounts ("from your account ending in 1234 to your
  * card ending in 5678"); `prefer` picks the right side so a card payment is not attributed

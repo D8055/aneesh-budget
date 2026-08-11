@@ -1,6 +1,9 @@
 import Dexie, { type Table } from 'dexie'
 import type { Transaction, Rule, Settings, Card, CustomCategory } from './types'
 import { CATEGORIES } from './types'
+import { accountNickname, applyAccountTitle, isGenericFallbackTitle } from './lib/accounts'
+import { extractAccountLast4 } from './lib/email/extract'
+import { dedupeHash } from './lib/dedupe'
 
 export class BudgetDB extends Dexie {
   transactions!: Table<Transaction, number>
@@ -27,6 +30,40 @@ export class BudgetDB extends Dexie {
     this.version(3).upgrade(async tx => {
       await tx.table('transactions').where('category').equals('Other').modify({ category: 'Miscellaneous' })
       await tx.table('rules').filter(r => r.category === 'Other').modify({ category: 'Miscellaneous' })
+    })
+    // Older parsers missed 3-digit account endings ("account ending in 134") and
+    // titled those alerts with the raw account reference or a generic fallback.
+    // Backfill the digits, apply friendly account names, and refresh dedupe
+    // hashes so future email re-scans match the renamed rows instead of
+    // re-importing them.
+    this.version(4).upgrade(async tx => {
+      const table = tx.table('transactions')
+      const all: Transaction[] = await table.toArray()
+      const hashes = new Set(all.map(t => t.dedupeHash))
+      for (const t of all) {
+        const changes: Partial<Transaction> = {}
+        const digits = t.accountLast4 ?? extractAccountLast4(t.rawText ?? '', t.direction === 'income' ? 'account' : 'card')
+        if (digits && digits !== t.accountLast4) changes.accountLast4 = digits
+        const titled = applyAccountTitle(t.merchant, digits, t.rawText ?? '', isGenericFallbackTitle(t.merchant))
+        if (titled !== t.merchant) {
+          changes.merchant = titled
+          if (t.needsReview) changes.needsReview = false
+          // dedupeHash is a unique index; on the rare collision keep the old hash
+          const newHash = dedupeHash(t.date, t.amountCents, titled, t.direction)
+          if (!hashes.has(newHash)) {
+            changes.dedupeHash = newHash
+            hashes.add(newHash)
+          }
+        }
+        if (Object.keys(changes).length > 0) await table.update(t.id!, changes)
+      }
+      await tx.table('cards').toCollection().modify(card => {
+        const nickname = card.last4 ? accountNickname(card.last4) : undefined
+        if (nickname && /•\d{3,4}$/.test(card.name)) {
+          card.name = nickname
+          if (/checking|savings/i.test(nickname)) card.kind = 'debit'
+        }
+      })
     })
   }
 }

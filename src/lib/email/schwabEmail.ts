@@ -1,6 +1,8 @@
 import type { Transaction } from '../../types'
 import { parseCents } from '../money'
 import { dedupeHash } from '../dedupe'
+import { applyAccountTitle } from '../accounts'
+import { extractAccountLast4 } from './extract'
 
 export interface EmailInput {
   subject: string
@@ -28,7 +30,12 @@ export function parseSchwabEmail(email: EmailInput): Omit<Transaction, 'category
 
   const isIncome = /\b(deposit|credit to your account|refund)\b/i.test(text) && !/card purchase|debit/i.test(text)
   const direction = isIncome ? 'income' as const : 'expense' as const
-  const merchant = merchantMatch ? merchantMatch[1].trim() : (isIncome ? 'Schwab deposit' : 'Schwab card purchase')
+  const parsed = merchantMatch ? merchantMatch[1].trim() : (isIncome ? 'Schwab deposit' : 'Schwab card purchase')
+
+  // "from your account ending in 134" alerts get the account's friendly name as
+  // the title instead of the raw digits or a generic fallback.
+  const digits = extractAccountLast4(text, isIncome ? 'account' : 'card')
+  const merchant = applyAccountTitle(parsed, digits, text, !merchantMatch)
 
   const dateMatch = text.match(/\bon\s+(\d{1,2})\/(\d{1,2})\/(\d{4})/)
   const date = dateMatch
@@ -43,6 +50,6 @@ export function parseSchwabEmail(email: EmailInput): Omit<Transaction, 'category
     merchant,
     rawText: text.slice(0, 500),
     dedupeHash: dedupeHash(date, cents, merchant, direction),
-    needsReview: !merchantMatch,
+    needsReview: !merchantMatch && merchant === parsed,
   }
 }
