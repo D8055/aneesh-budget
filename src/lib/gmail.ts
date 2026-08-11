@@ -21,20 +21,25 @@ export function hasBuiltInClientId(): boolean {
 /* ===== Auth: full-page redirect flow (implicit grant) =====
  * Popups are blocked in installed PWAs (especially iOS Safari), so sign-in
  * navigates to Google and Google redirects back here with the token in the
- * URL hash. Tokens live for ~1h in sessionStorage; renewal is a quick
- * prompt=none bounce guarded against redirect loops. */
+ * URL hash. Tokens live ~1h in localStorage (sessionStorage dies whenever iOS
+ * kills the installed app, which forced a re-auth on nearly every open).
+ * Renewal is a quick prompt=none bounce guarded against redirect loops; the
+ * signed-in address is remembered and sent as login_hint so any re-auth is a
+ * one-tap "Continue as …", not a fresh account picker. */
 
 let accessToken: string | null = null
 let tokenExpiry = 0
 
-const SS_TOKEN = 'gmailToken'
-const SS_TOKEN_EXP = 'gmailTokenExp'
+const LS_TOKEN = 'gmailToken'
+const LS_TOKEN_EXP = 'gmailTokenExp'
+const LS_SILENT_AT = 'gmailSilentAt'
+const LS_INTERACTIVE_AT = 'gmailInteractiveAt'
 const SS_AUTH_STATE = 'gmailAuthState'
-const SS_SILENT_AT = 'gmailSilentAt'
 const SILENT_RETRY_MS = 3 * 60 * 1000
+const INTERACTIVE_RETRY_MS = 15 * 60 * 1000
 
 /** OAuth authorization URL for the redirect flow. Pure; unit tested. */
-export function buildAuthUrl(clientId: string, redirectUri: string, opts: { state: string; silent?: boolean }): string {
+export function buildAuthUrl(clientId: string, redirectUri: string, opts: { state: string; silent?: boolean; loginHint?: string }): string {
   const params = new URLSearchParams({
     client_id: clientId,
     redirect_uri: redirectUri,
@@ -42,6 +47,7 @@ export function buildAuthUrl(clientId: string, redirectUri: string, opts: { stat
     scope: SCOPE,
     state: opts.state,
     ...(opts.silent ? { prompt: 'none' } : {}),
+    ...(opts.loginHint ? { login_hint: opts.loginHint } : {}),
   })
   return `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`
 }
@@ -80,7 +86,8 @@ function newState(kind: 'i' | 's'): string {
 export async function connectGmail(): Promise<void> {
   const clientId = await resolveClientId()
   if (!clientId) throw new Error('This build has no Google Client ID. Add one under Advanced setup below.')
-  location.assign(buildAuthUrl(clientId, redirectUri(), { state: newState('i') }))
+  const hint = await getSetting('gmailAccount')
+  location.assign(buildAuthUrl(clientId, redirectUri(), { state: newState('i'), loginHint: hint || undefined }))
 }
 
 /** Call once on app start, before the first sync. Consumes a Google redirect
@@ -95,25 +102,49 @@ export async function handleAuthReturn(): Promise<string | null> {
 
   if ('error' in parsed) {
     if (silent) {
-      // silent renewal failed — the Google session is gone; require a manual sign-in
+      // Silent renewal failed — Google wants interaction. Instead of dropping the
+      // connection (which forced a full re-login from Settings), bounce once through
+      // interactive auth pre-filled with the saved account: with the scope already
+      // granted that's typically a single "Continue as …" tap, or no tap at all.
+      const clientId = await resolveClientId()
+      const hint = await getSetting('gmailAccount')
+      const lastInteractive = Number(localStorage.getItem(LS_INTERACTIVE_AT) ?? 0)
+      if (clientId && hint && Date.now() - lastInteractive > INTERACTIVE_RETRY_MS) {
+        localStorage.setItem(LS_INTERACTIVE_AT, String(Date.now()))
+        location.assign(buildAuthUrl(clientId, redirectUri(), { state: newState('i'), loginHint: hint }))
+        return null
+      }
       await setSetting('gmailConnected', 'false')
-      return null
+      return 'Google sign-in expired — reconnect Gmail in Settings.'
     }
     return `Google sign-in didn’t complete (${parsed.error}). Try again from Settings.`
   }
   if (expected && parsed.state !== expected) return null // stale or injected return — ignore
   accessToken = parsed.accessToken
   tokenExpiry = Date.now() + (parsed.expiresIn - 60) * 1000
-  sessionStorage.setItem(SS_TOKEN, accessToken)
-  sessionStorage.setItem(SS_TOKEN_EXP, String(tokenExpiry))
+  localStorage.setItem(LS_TOKEN, accessToken)
+  localStorage.setItem(LS_TOKEN_EXP, String(tokenExpiry))
+  localStorage.removeItem(LS_INTERACTIVE_AT)
   await setSetting('gmailConnected', 'true')
+  // Remember which account signed in so every future auth can pre-select it.
+  try {
+    const res = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/profile', {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    })
+    if (res.ok) {
+      const profile = await res.json()
+      if (profile.emailAddress) await setSetting('gmailAccount', profile.emailAddress)
+    }
+  } catch {
+    // saving the hint is best-effort; auth itself already succeeded
+  }
   return silent ? null : 'Gmail connected.'
 }
 
 async function ensureToken(): Promise<boolean> {
   if (!accessToken) {
-    const stored = sessionStorage.getItem(SS_TOKEN)
-    const exp = Number(sessionStorage.getItem(SS_TOKEN_EXP) ?? 0)
+    const stored = localStorage.getItem(LS_TOKEN)
+    const exp = Number(localStorage.getItem(LS_TOKEN_EXP) ?? 0)
     if (stored && Date.now() < exp) { accessToken = stored; tokenExpiry = exp }
   }
   if (accessToken && Date.now() < tokenExpiry) return true
@@ -123,11 +154,13 @@ async function ensureToken(): Promise<boolean> {
   if (!clientId || connected !== 'true') return false
 
   // Renew via a quick prompt=none redirect bounce — only when the app is visible
-  // and we haven't just tried (prevents redirect loops).
-  const lastSilent = Number(sessionStorage.getItem(SS_SILENT_AT) ?? 0)
+  // and we haven't just tried (prevents redirect loops). The saved account rides
+  // along so Google knows exactly which session to renew.
+  const lastSilent = Number(localStorage.getItem(LS_SILENT_AT) ?? 0)
   if (document.visibilityState === 'visible' && Date.now() - lastSilent > SILENT_RETRY_MS) {
-    sessionStorage.setItem(SS_SILENT_AT, String(Date.now()))
-    location.assign(buildAuthUrl(clientId, redirectUri(), { state: newState('s'), silent: true }))
+    localStorage.setItem(LS_SILENT_AT, String(Date.now()))
+    const hint = await getSetting('gmailAccount')
+    location.assign(buildAuthUrl(clientId, redirectUri(), { state: newState('s'), silent: true, loginHint: hint || undefined }))
   }
   return false
 }
@@ -261,7 +294,11 @@ export async function syncGmail(
 export async function disconnectGmail(): Promise<void> {
   accessToken = null
   tokenExpiry = 0
-  sessionStorage.removeItem(SS_TOKEN)
-  sessionStorage.removeItem(SS_TOKEN_EXP)
+  localStorage.removeItem(LS_TOKEN)
+  localStorage.removeItem(LS_TOKEN_EXP)
+  localStorage.removeItem(LS_SILENT_AT)
+  localStorage.removeItem(LS_INTERACTIVE_AT)
   await setSetting('gmailConnected', 'false')
+  // An explicit sign-out also forgets which account to pre-select next time.
+  await setSetting('gmailAccount', '')
 }

@@ -17,6 +17,11 @@ describe('buildAuthUrl', () => {
     expect(url).not.toContain('prompt=none')
     expect(buildAuthUrl('c', 'r', { state: 's:x', silent: true })).toContain('prompt=none')
   })
+  it('carries the saved account as login_hint so re-auth pre-selects it', () => {
+    expect(buildAuthUrl('c', 'r', { state: 'i:x', loginHint: 'aneesh@gmail.com' }))
+      .toContain(`login_hint=${encodeURIComponent('aneesh@gmail.com')}`)
+    expect(url).not.toContain('login_hint')
+  })
 })
 
 describe('parseAuthHash', () => {
