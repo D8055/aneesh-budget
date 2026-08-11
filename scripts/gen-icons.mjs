@@ -8,25 +8,30 @@ import { fileURLToPath } from 'node:url'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 
-// 16x16 cells; 192 and 512 are both exact multiples so the pixels stay crisp.
-// . background  G green  D dark green (shade)  O orange tie  o dark orange  K black (on the bag)
+// Transcribed from the reference pixel art, one grid cell per source "pixel":
+// tuft (rows 0-3, dark-shaded right lobe), orange tie with black end caps
+// (row 4), shadow band under the tie (row 5), oval body 13 cells wide with a
+// black outline ring, dark-green crescent along the inner bottom-right, and a
+// 5x9 dollar sign with a continuous center bar. 16x16 cells; 192 and 512 are
+// both exact multiples so the pixels stay crisp.
+// . background  G green  D dark green (shade)  O orange tie  o dark orange  K black outline/$
 const GRID = [
-  '................',
-  '......GGG.......',
-  '.....GGGDG......',
-  '......GDG.......',
-  '.....OOOoo......',
-  '.....GGGGGD.....',
-  '....GGGGKGGD....',
-  '...GGGGKKKKDD...',
-  '..GGGGKGKGGGDD..',
-  '..GGGGKGKGGGDD..',
-  '..GGGGGKKKGGDD..',
-  '..GGGGGGKGKGDD..',
-  '..GGGGGGKGKGDD..',
-  '...GGGKKKKGDD...',
-  '....DDDDKDDD....',
-  '................',
+  '.....KKKK.......',
+  '....KGGGDK......',
+  '....KGGDDK......',
+  '.....KGDK.......',
+  '....KOOOooK.....',
+  '....KGDDDGK.....',
+  '...KGGGGKGGK....',
+  '..KGGGGKKKKGK...',
+  '.KGGGGKGKGGGDK..',
+  '.KGGGGKGKGGGDK..',
+  '.KGGGGGKKKGGDK..',
+  '.KGGGGGGKGKGDK..',
+  '..KGGGGGKGKDK...',
+  '...KGGKKKKDK....',
+  '....KDDDKDK.....',
+  '.....KKKKK......',
 ]
 
 const PALETTE = {
