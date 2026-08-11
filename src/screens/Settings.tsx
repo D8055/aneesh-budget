@@ -67,8 +67,10 @@ export default function Settings() {
       return
     }
     const rules = await db.rules.toArray()
-    const withCats = txs.map(t =>
-      applyVenmoIncomeDefaults({ ...t, category: categorize(t.merchant, t.rawText, t.direction, rules) }, rules))
+    const withCats = txs.map(raw => {
+      const t = applyVenmoIncomeDefaults({ ...raw, category: categorize(raw.merchant, raw.rawText, raw.direction, rules) }, rules)
+      return { ...t, autoMerchant: t.merchant, autoCategory: t.category }
+    })
     setPending({ source, label, txs: withCats, skipped })
   }
 

@@ -86,7 +86,8 @@ export const DEFAULT_RULES: Omit<Rule, 'id'>[] = [
     'amtrak', 'greyhound', 'flixbus', 'megabus', 'mta ', 'cta ', 'septa', 'wmata', 'waymo', 'turo', 'zipcar',
     'hertz', 'avis', 'enterprise rent', 'budget rent', 'national car rental', 'alamo rent', 'jiffy lube',
     'valvoline', 'autozone', "o'reilly auto", 'oreilly auto', 'napa auto', 'pep boys', 'discount tire',
-    'les schwab', 'firestone', 'goodyear', 'midas', 'meineke', 'car wash', 'smog', 'oil change', 'chargepoint',
+    // 'les schwab tire', not 'les schwab': the bare form is a substring of "Charles Schwab …" account titles
+    'les schwab tire', 'firestone', 'goodyear', 'midas', 'meineke', 'car wash', 'smog', 'oil change', 'chargepoint',
     'evgo', 'electrify america', 'supercharg', 'blink charging', 'dmv',
   ].map(p => ({ pattern: p, category: 'Transport', priority: 130 })),
 

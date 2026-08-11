@@ -24,11 +24,17 @@ const sourceLabel = (t: Transaction, cards: Card[]) => {
   return t.accountLast4 ? accountLabel(base, t.accountLast4, cards) : base
 }
 
+/** Mobile transfer apps that get their own filter tab when detected. */
+const TRANSFER_APPS = ['Venmo', 'Zelle', 'Cash App', 'PayPal']
+
+const effectiveProvider = (t: Transaction) => t.provider ?? SOURCE_LABEL[t.source]
+
 const EMPTY_FORM = { date: '', merchant: '', amount: '', direction: 'expense' as 'expense' | 'income', category: 'Miscellaneous' }
 
 export default function Transactions() {
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState<string>('All')
+  const [appFilter, setAppFilter] = useState<string>('All')
   const [accountFilter, setAccountFilter] = useState<string>('All')
   const [editing, setEditing] = useState<Transaction | null>(null)
   const [makeRule, setMakeRule] = useState(false)
@@ -49,15 +55,21 @@ export default function Transactions() {
     let all = await db.transactions.orderBy('date').reverse().toArray()
     if (filter === 'Needs review') all = all.filter(t => t.needsReview)
     else if (filter !== 'All') all = all.filter(t => t.category === filter)
+    if (appFilter !== 'All') all = all.filter(t => effectiveProvider(t) === appFilter)
     if (accountFilter !== 'All') all = all.filter(t => t.accountLast4 === accountFilter)
     const q = query.trim().toLowerCase()
     if (q) all = all.filter(t => t.merchant.toLowerCase().includes(q) || t.rawText.toLowerCase().includes(q))
     return all.slice(0, 300)
-  }, [query, filter, accountFilter])
+  }, [query, filter, appFilter, accountFilter])
 
   const accounts = useLiveQuery(async () => {
     const all = await db.transactions.toArray()
     return [...new Set(all.map(t => t.accountLast4).filter((a): a is string => !!a))].sort()
+  }) ?? []
+
+  const transferApps = useLiveQuery(async () => {
+    const present = new Set((await db.transactions.toArray()).map(effectiveProvider))
+    return TRANSFER_APPS.filter(a => present.has(a))
   }) ?? []
 
   const reviewCount = useLiveQuery(() => db.transactions.filter(t => !!t.needsReview).count()) ?? 0
@@ -166,6 +178,16 @@ export default function Transactions() {
           </button>
         ))}
       </div>
+
+      {transferApps.length > 0 && (
+        <div className="chips">
+          {['All', ...transferApps].map(a => (
+            <button key={a} className={`chip ${appFilter === a ? 'active' : ''}`} onClick={() => setAppFilter(a)}>
+              {a === 'All' ? 'All apps' : a}
+            </button>
+          ))}
+        </div>
+      )}
 
       {accounts.length > 1 && (
         <div className="chips">

@@ -252,7 +252,10 @@ export async function syncGmail(
       const parsed = parseProviderEmail(from, email)
       if (parsed) {
         const category = categorize(parsed.merchant, parsed.rawText, parsed.direction, userRules)
-        txs.push(applyVenmoIncomeDefaults({ ...parsed, category }, userRules))
+        const tx = applyVenmoIncomeDefaults({ ...parsed, category }, userRules)
+        // Record what the parser/categorizer produced so later re-parses can
+        // tell auto values (upgradable) apart from user edits (untouchable).
+        txs.push({ ...tx, autoMerchant: tx.merchant, autoCategory: tx.category })
       }
     } catch {
       // one unreadable/unparseable email must never abort the whole scan

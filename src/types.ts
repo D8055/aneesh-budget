@@ -18,6 +18,12 @@ export interface Transaction {
   accountLast4?: string
   /** user-written note */
   note?: string
+  /** title the parser produced at import/last re-parse; `merchant` differing from
+   * this means the user renamed it, and re-parses must leave it alone */
+  autoMerchant?: string
+  /** category the categorizer chose at import/last re-parse; `category` differing
+   * from this means the user recategorized it, and re-parses must leave it alone */
+  autoCategory?: string
   /** original row/email text for reference and re-parsing */
   rawText: string
   /** hash of date+amount+merchant used to prevent double counting */

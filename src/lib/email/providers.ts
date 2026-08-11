@@ -70,6 +70,16 @@ function providerFor(from: string): string {
   return m ? m[1] : 'Bank'
 }
 
+/** A fabricated from-address that providerFor() maps back to the given provider
+ * name — lets stored transactions re-enter the parsing pipeline (re-parse after
+ * a parser upgrade) without the original email headers. */
+export function syntheticSender(provider?: string): string {
+  if (!provider) return 'alerts@bank.example'
+  const entry = PROVIDER_NAMES.find(([, name]) => name === provider)
+  if (entry) return `alerts@${entry[0]}${entry[0].includes('.') ? '' : '.com'}`
+  return provider.includes('.') ? `alerts@${provider.toLowerCase()}` : 'alerts@bank.example'
+}
+
 const MONTHS: Record<string, string> = {
   jan: '01', feb: '02', mar: '03', apr: '04', may: '05', jun: '06',
   jul: '07', aug: '08', sep: '09', oct: '10', nov: '11', dec: '12',
