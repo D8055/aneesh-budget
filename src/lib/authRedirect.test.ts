@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildAuthUrl, parseAuthHash } from './gmail'
+import { buildAuthUrl, parseAuthHash, shouldRedirectForAuth } from './gmail'
 
 describe('buildAuthUrl', () => {
   const url = buildAuthUrl('CLIENT123.apps.googleusercontent.com', 'https://d8055.github.io/aneesh-budget/', { state: 'i:abc' })
@@ -21,6 +21,26 @@ describe('buildAuthUrl', () => {
     expect(buildAuthUrl('c', 'r', { state: 'i:x', loginHint: 'aneesh@gmail.com' }))
       .toContain(`login_hint=${encodeURIComponent('aneesh@gmail.com')}`)
     expect(url).not.toContain('login_hint')
+  })
+})
+
+describe('shouldRedirectForAuth', () => {
+  const ok = { online: true, visible: true, lastAttemptAt: 0, now: 600_000, retryMs: 180_000 }
+
+  it('allows a renewal when online, visible, and past the retry window', () => {
+    expect(shouldRedirectForAuth(ok)).toBe(true)
+  })
+  it('never navigates away while offline — the app stays usable instead', () => {
+    expect(shouldRedirectForAuth({ ...ok, online: false })).toBe(false)
+  })
+  it('waits until the app is visible', () => {
+    expect(shouldRedirectForAuth({ ...ok, visible: false })).toBe(false)
+  })
+  it('rate-limits repeat attempts to prevent redirect loops', () => {
+    expect(shouldRedirectForAuth({ ...ok, lastAttemptAt: 500_000 })).toBe(false)
+  })
+  it('requires every condition, not just the network', () => {
+    expect(shouldRedirectForAuth({ ...ok, online: false, visible: false })).toBe(false)
   })
 })
 

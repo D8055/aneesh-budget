@@ -53,7 +53,15 @@ export default function App() {
       if (document.visibilityState === 'visible' && Date.now() - lastRunAt > FOREGROUND_THROTTLE_MS) run()
     }
     document.addEventListener('visibilitychange', onVisible)
-    return () => { cancelled = true; clearInterval(id); document.removeEventListener('visibilitychange', onVisible) }
+    // Offline syncs are skipped entirely (the app stays fully usable), so catch
+    // up as soon as the network is back instead of waiting for the next timer.
+    window.addEventListener('online', run)
+    return () => {
+      cancelled = true
+      clearInterval(id)
+      document.removeEventListener('visibilitychange', onVisible)
+      window.removeEventListener('online', run)
+    }
   }, [])
 
   return (

@@ -74,6 +74,27 @@ function redirectUri(): string {
   return location.origin + location.pathname.replace(/index\.html$/, '')
 }
 
+/** Whether an auth redirect may run now. Pure; unit tested.
+ *
+ * Navigating to accounts.google.com while offline replaces the app with the
+ * browser's "no internet" page — the app is fully usable offline otherwise, so
+ * a renewal must never cost the user their session. Offline simply defers it. */
+export function shouldRedirectForAuth(opts: {
+  online: boolean
+  visible: boolean
+  lastAttemptAt: number
+  now: number
+  retryMs: number
+}): boolean {
+  return opts.online && opts.visible && opts.now - opts.lastAttemptAt > opts.retryMs
+}
+
+/** navigator.onLine is a hint, not a guarantee: false is reliable ("no network
+ * interface"), true only means an interface exists. Treat a missing value as online. */
+export function isOnline(): boolean {
+  return typeof navigator === 'undefined' || navigator.onLine !== false
+}
+
 function newState(kind: 'i' | 's'): string {
   const nonce = crypto.getRandomValues(new Uint32Array(2)).join('')
   const state = `${kind}:${nonce}`
@@ -86,6 +107,7 @@ function newState(kind: 'i' | 's'): string {
 export async function connectGmail(): Promise<void> {
   const clientId = await resolveClientId()
   if (!clientId) throw new Error('This build has no Google Client ID. Add one under Advanced setup below.')
+  if (!isOnline()) throw new Error('You’re offline — connect to the internet to sign in to Google. The rest of the app works offline.')
   const hint = await getSetting('gmailAccount')
   location.assign(buildAuthUrl(clientId, redirectUri(), { state: newState('i'), loginHint: hint || undefined }))
 }
@@ -108,12 +130,21 @@ export async function handleAuthReturn(): Promise<string | null> {
       // granted that's typically a single "Continue as …" tap, or no tap at all.
       const clientId = await resolveClientId()
       const hint = await getSetting('gmailAccount')
-      const lastInteractive = Number(localStorage.getItem(LS_INTERACTIVE_AT) ?? 0)
-      if (clientId && hint && Date.now() - lastInteractive > INTERACTIVE_RETRY_MS) {
+      const canBounce = shouldRedirectForAuth({
+        online: isOnline(),
+        visible: true,
+        lastAttemptAt: Number(localStorage.getItem(LS_INTERACTIVE_AT) ?? 0),
+        now: Date.now(),
+        retryMs: INTERACTIVE_RETRY_MS,
+      })
+      if (clientId && hint && canBounce) {
         localStorage.setItem(LS_INTERACTIVE_AT, String(Date.now()))
         location.assign(buildAuthUrl(clientId, redirectUri(), { state: newState('i'), loginHint: hint }))
         return null
       }
+      // Offline: the failure says nothing about the account, so keep the
+      // connection and let the next online sync renew it.
+      if (!isOnline()) return null
       await setSetting('gmailConnected', 'false')
       return 'Google sign-in expired — reconnect Gmail in Settings.'
     }
@@ -153,11 +184,17 @@ async function ensureToken(): Promise<boolean> {
   const connected = await getSetting('gmailConnected')
   if (!clientId || connected !== 'true') return false
 
-  // Renew via a quick prompt=none redirect bounce — only when the app is visible
+  // Renew via a quick prompt=none redirect bounce — only when online, visible,
   // and we haven't just tried (prevents redirect loops). The saved account rides
   // along so Google knows exactly which session to renew.
-  const lastSilent = Number(localStorage.getItem(LS_SILENT_AT) ?? 0)
-  if (document.visibilityState === 'visible' && Date.now() - lastSilent > SILENT_RETRY_MS) {
+  const canRenew = shouldRedirectForAuth({
+    online: isOnline(),
+    visible: document.visibilityState === 'visible',
+    lastAttemptAt: Number(localStorage.getItem(LS_SILENT_AT) ?? 0),
+    now: Date.now(),
+    retryMs: SILENT_RETRY_MS,
+  })
+  if (canRenew) {
     localStorage.setItem(LS_SILENT_AT, String(Date.now()))
     const hint = await getSetting('gmailAccount')
     location.assign(buildAuthUrl(clientId, redirectUri(), { state: newState('s'), silent: true, loginHint: hint || undefined }))
@@ -217,6 +254,9 @@ export async function syncGmail(
   options: { fullHistory?: boolean } = {},
   onProgress?: (done: number, total: number) => void,
 ): Promise<SyncResult> {
+  if (!isOnline()) {
+    return { ok: false, added: 0, scanned: 0, message: 'You’re offline — everything else works; syncing resumes automatically.' }
+  }
   if (!(await ensureToken())) {
     return { ok: false, added: 0, scanned: 0, message: 'Gmail is not connected.' }
   }
