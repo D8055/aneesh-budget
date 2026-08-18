@@ -24,6 +24,9 @@ export interface Transaction {
   /** category the categorizer chose at import/last re-parse; `category` differing
    * from this means the user recategorized it, and re-parses must leave it alone */
   autoCategory?: string
+  /** direction the parser produced at import/last re-parse; `direction` differing
+   * from this means the user flipped it, and re-parses must leave it alone */
+  autoDirection?: Direction
   /** original row/email text for reference and re-parsing */
   rawText: string
   /** hash of date+amount+merchant used to prevent double counting */

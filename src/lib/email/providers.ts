@@ -97,12 +97,26 @@ function extractDate(text: string): string | null {
   return null
 }
 
-/** Person-to-person phrasing shared by Zelle, Cash App, PayPal, and bank-embedded Zelle. */
-function parseP2P(text: string, provider: string): { cents: number; direction: 'income' | 'expense'; name: string } | null {
+/** Trailing "with Zelle®" / "via PayPal" tails are branding, not part of the person's name. */
+function cleanP2PName(raw: string): string {
+  return raw.trim().replace(/\s+(?:with|via|using|through)\s+\S.*$/i, '').trim()
+}
+
+/** Person-to-person phrasing shared by Zelle, Cash App, PayPal, and bank-embedded Zelle.
+ * Precise inline-amount patterns run first; "money" phrasings where the amount lives
+ * elsewhere in the email ("Jane sent you money with Zelle®. Amount: $250.00") run last,
+ * pulling the amount from a labeled field before falling back to the first dollar figure.
+ * A name of null means money arrived but no sender could be extracted. */
+function parseP2P(text: string, provider: string): { cents: number; direction: 'income' | 'expense'; name: string | null } | null {
   let m = text.match(/^(.{2,60}?) sent you \$\s?([\d,]+\.?\d{0,2})/i) ?? text.match(/\b([A-Z][^.,\n$]{1,50}?) sent you \$\s?([\d,]+\.?\d{0,2})/)
   if (m) {
     const cents = parseCents(`$${m[2]}`)
-    if (cents) return { cents, direction: 'income', name: m[1].trim() }
+    if (cents) return { cents, direction: 'income', name: cleanP2PName(m[1]) }
+  }
+  m = text.match(/\bYou(?:'ve| have)? received \$\s?([\d,]+\.?\d{0,2})(?:\s?USD)? from (.{2,60}?)(?:\s+with\b|\s+via\b|\s+on\b|[.,\n]|$)/i)
+  if (m) {
+    const cents = parseCents(`$${m[1]}`)
+    if (cents) return { cents, direction: 'income', name: cleanP2PName(m[2]) }
   }
   m = text.match(/You sent \$\s?([\d,]+\.?\d{0,2})(?:\s?USD)? to (.{2,60}?)(?: with|[.,\n]|$)/i)
   if (m) {
@@ -114,6 +128,32 @@ function parseP2P(text: string, provider: string): { cents: number; direction: '
     const cents = parseCents(`$${m[2]}`)
     if (cents) return { cents, direction: 'expense', name: m[1].trim() }
   }
+
+  const looseAmount = () => extractLabeledAmount(text) ?? (() => {
+    const a = text.match(/\$\s?([\d,]+\.?\d{0,2})/)
+    return a ? parseCents(a[0]) : null
+  })()
+
+  m = text.match(/\bYou sent money to (.{2,60}?)(?:\s+with\b|\s+via\b|\s+on\b|[.,\n]|$)/i)
+  if (m) {
+    const cents = looseAmount()
+    if (cents) return { cents, direction: 'expense', name: cleanP2PName(m[1]) }
+  }
+
+  const looseIncome =
+    text.match(/^(.{2,60}?) sent you money\b/i) ??
+    text.match(/\b([A-Z][^.,\n$]{1,50}?) sent you money\b/) ??
+    text.match(/\bYou(?:'ve| have)? received (?:money|a payment|funds) from (.{2,60}?)(?:\s+with\b|\s+via\b|\s+on\b|[.,\n]|$)/i)
+  // Nameless receipts ("You received money with Zelle®") still count, but only with
+  // clear payment context so marketing copy can't fabricate income.
+  const namelessIncome = !looseIncome
+    && /\bYou(?:'ve| have)? received (?:money|a payment|funds)\b/i.test(text)
+    && /zelle|cash app|paypal|venmo|payment|transfer|deposit/i.test(text)
+  if (looseIncome || namelessIncome) {
+    const cents = looseAmount()
+    if (cents) return { cents, direction: 'income', name: looseIncome ? cleanP2PName(looseIncome[1]) : null }
+  }
+
   void provider
   return null
 }
@@ -168,12 +208,14 @@ export function parseProviderEmail(from: string, mail: EmailInput): ParsedTx | n
 
   const segments = [mail.subject.replace(/\s+/g, ' ').trim(), mail.body.replace(/\s+/g, ' ').trim()]
 
-  // P2P phrasing first (Zelle/Cash App/PayPal, and Zelle inside bank emails)
-  for (const seg of segments) {
+  // P2P phrasing first (Zelle/Cash App/PayPal, and Zelle inside bank emails).
+  // The joined pass catches emails that put the sender in the subject and the
+  // amount in the body ("Jane sent you money with Zelle®" / "Amount: $250.00").
+  for (const seg of [...segments, segments.join(' ')]) {
     const p2p = parseP2P(seg, provider)
     if (p2p) {
       const date = extractDate(segments.join(' ')) ?? mail.receivedDate
-      const merchant = `${provider}: ${p2p.name}`
+      const merchant = p2p.name ? `${provider}: ${p2p.name}` : `${provider}: money received`
       return {
         date,
         amountCents: p2p.cents,
@@ -184,6 +226,7 @@ export function parseProviderEmail(from: string, mail: EmailInput): ParsedTx | n
         merchant,
         rawText: segments.join(' | ').slice(0, 500),
         dedupeHash: dedupeHash(date, p2p.cents, merchant, p2p.direction),
+        needsReview: p2p.name ? undefined : true,
       }
     }
   }

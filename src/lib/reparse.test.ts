@@ -108,9 +108,36 @@ describe('planReparseUpdate', () => {
     expect('note' in changes).toBe(false)
   })
 
-  it('skips the row entirely when the re-parse disagrees on amount or direction', () => {
+  it('skips the row entirely when the re-parse disagrees on amount', () => {
     expect(planReparseUpdate({ ...base, amountCents: 999 }, parsed, [])).toBeNull()
-    expect(planReparseUpdate({ ...base, direction: 'expense' }, parsed, [])).toBeNull()
+  })
+
+  it('flips a parser-produced direction and flags the row for review', () => {
+    const changes = planReparseUpdate({ ...base, direction: 'expense' }, parsed, [])!
+    expect(changes.direction).toBe('income')
+    expect(changes.needsReview).toBe(true)
+  })
+
+  it('keeps a user-flipped direction (autoDirection provenance)', () => {
+    // parser said income, user flipped to expense — the row is untouchable
+    expect(planReparseUpdate({ ...base, direction: 'expense', autoDirection: 'income' }, parsed, [])).toBeNull()
+  })
+
+  it('fixes received-Zelle rows that were imported as expenses', () => {
+    const t: Transaction = {
+      ...base,
+      source: 'bank-email',
+      provider: 'Zelle',
+      direction: 'expense',
+      merchant: 'Zelle: Jane Smith',
+      category: 'Transfers',
+      rawText: 'Jane Smith sent you money with Zelle® | Amount: $250.00 has been added to your account',
+    }
+    const p = reparseOne(t)!
+    expect(p.direction).toBe('income')
+    const changes = planReparseUpdate(t, p, [])!
+    expect(changes.direction).toBe('income')
+    expect(changes.needsReview).toBe(true)
   })
 
   it('returns null when nothing needs to change', () => {
@@ -120,6 +147,7 @@ describe('planReparseUpdate', () => {
       autoMerchant: 'Charles Schwab Checking',
       category: 'Income',
       autoCategory: 'Income',
+      autoDirection: 'income' as const,
       accountLast4: '134',
     }
     expect(planReparseUpdate(t, reparseOne(t), [])).toBeNull()

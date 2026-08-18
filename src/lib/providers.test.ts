@@ -38,6 +38,44 @@ describe('provider email parsing', () => {
     expect(sent.merchant).toBe('Zelle: Bob Jones')
   })
 
+  it('parses Zelle received-money phrasings where the amount is elsewhere in the email', () => {
+    // Zelle's own notification: name in the subject, amount in a labeled body field
+    const zelle = parseProviderEmail('Zelle <no-reply@zellepay.com>',
+      email('Jane Smith sent you money with Zelle®', 'Amount: $250.00 Memo: rent. The money has been sent to your account.'))!
+    expect(zelle.direction).toBe('income')
+    expect(zelle.amountCents).toBe(25000)
+    expect(zelle.merchant).toBe('Zelle: Jane Smith')
+
+    const received = parseProviderEmail('Zelle <no-reply@zellepay.com>',
+      email('You received money from Jane Smith', 'You received $42.00 from Jane Smith with Zelle®.'))!
+    expect(received.direction).toBe('income')
+    expect(received.amountCents).toBe(4200)
+    expect(received.merchant).toBe('Zelle: Jane Smith')
+  })
+
+  it('parses bank-embedded Zelle receipts, flagging nameless ones for review', () => {
+    const chase = parseProviderEmail('Chase <no.reply.alerts@chase.com>',
+      email('You received money with Zelle®', 'You received money with Zelle®. Amount: $61.50 Account ending in 1234'))!
+    expect(chase.direction).toBe('income')
+    expect(chase.amountCents).toBe(6150)
+    expect(chase.provider).toBe('Chase')
+    expect(chase.needsReview).toBe(true)
+
+    const named = parseProviderEmail('Bank of America <onlinebanking@ealerts.bankofamerica.com>',
+      email('Bob Jones sent you money', 'Bob Jones sent you money with Zelle®. Amount: $30.00 was deposited into your account ending in 4321.'))!
+    expect(named.direction).toBe('income')
+    expect(named.amountCents).toBe(3000)
+    expect(named.merchant).toBe('Bank of America: Bob Jones')
+  })
+
+  it('still reads sent-money Zelle phrasings as expenses', () => {
+    const sent = parseProviderEmail('Zelle <no-reply@zellepay.com>',
+      email('You sent money to Bob Jones', 'You sent money to Bob Jones with Zelle®. Amount: $15.00'))!
+    expect(sent.direction).toBe('expense')
+    expect(sent.amountCents).toBe(1500)
+    expect(sent.merchant).toBe('Zelle: Bob Jones')
+  })
+
   it('parses Cash App payments both directions', () => {
     const got = parseProviderEmail('Cash App <cash@square.com>',
       email('Maya sent you $15.00', 'Maya sent you $15.00 for lunch'))!

@@ -132,6 +132,16 @@ export default function Transactions() {
     setEditing(null)
   }
 
+  /** Flip money in/out. Records the parser's original read as autoDirection so
+   * future re-parses respect the user's correction; keeps the sheet open so a
+   * category fix can follow in the same visit. */
+  const saveDirection = async (direction: 'expense' | 'income') => {
+    if (!editing?.id || editing.direction === direction) return
+    const autoDirection = editing.autoDirection ?? editing.direction
+    await db.transactions.update(editing.id, { direction, autoDirection, needsReview: false })
+    setEditing({ ...editing, direction, autoDirection, needsReview: false })
+  }
+
   const saveDetails = async () => {
     if (!editing?.id) return
     const merchant = editName.trim() || editing.merchant
@@ -233,8 +243,20 @@ export default function Transactions() {
               <CategoryChip category={editing.category} />
               <div>
                 <strong>{editing.merchant}</strong>
-                <p className="muted">{fmtDateShort(editing.date)} · {fmtCents(editing.amountCents)}</p>
+                <p className="muted">
+                  {fmtDateShort(editing.date)} · <span className={`tx-amount ${editing.direction}`}>
+                    {editing.direction === 'income' ? '+' : '−'}{fmtCents(editing.amountCents)}
+                  </span>
+                </p>
               </div>
+            </div>
+            <div className="row">
+              <button className={`chip ${editing.direction === 'expense' ? 'active' : ''}`} onClick={() => saveDirection('expense')}>
+                − Money out
+              </button>
+              <button className={`chip ${editing.direction === 'income' ? 'active' : ''}`} onClick={() => saveDirection('income')}>
+                + Money in
+              </button>
             </div>
             {editing.needsReview && editing.direction === 'income' && (editing.source === 'venmo-email' || editing.source === 'venmo-csv') && (
               <div className="row">
